@@ -1,0 +1,5 @@
+model_push
+/home/chiliwei/siso_bot/devel/.private/model_push/lib/libmodel_push.so /home/chiliwei/siso_bot/devel/lib/libmodel_push.so
+/home/chiliwei/siso_bot/devel/.private/model_push/lib/pkgconfig/model_push.pc /home/chiliwei/siso_bot/devel/lib/pkgconfig/model_push.pc
+/home/chiliwei/siso_bot/devel/.private/model_push/share/model_push/cmake/model_pushConfig-version.cmake /home/chiliwei/siso_bot/devel/share/model_push/cmake/model_pushConfig-version.cmake
+/home/chiliwei/siso_bot/devel/.private/model_push/share/model_push/cmake/model_pushConfig.cmake /home/chiliwei/siso_bot/devel/share/model_push/cmake/model_pushConfig.cmake
