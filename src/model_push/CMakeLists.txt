@@ -13,6 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   gazebo_ros
   std_msgs
   message_generation
+  genmsg
 )
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -50,18 +51,16 @@ link_directories(${GAZEBO_LIBRARY_DIRS})
 ##   * add every package in MSG_DEP_SET to generate_messages(DEPENDENCIES ...)
 
 ## Generate messages in the 'msg' folder
-# add_message_files(
-#   FILES
-#   Message1.msg
-#   Message2.msg
-# )
+add_message_files(
+  FILES
+  Num.msg
+)
 
 ## Generate services in the 'srv' folder
-# add_service_files(
-#   FILES
-#   Service1.srv
-#   Service2.srv
-# )
+add_service_files(
+  FILES
+  AddTwoInts.srv
+)
 
 ## Generate actions in the 'action' folder
 # add_action_files(
@@ -71,10 +70,10 @@ link_directories(${GAZEBO_LIBRARY_DIRS})
 # )
 
 ## Generate added messages and services with any dependencies listed here
-# generate_messages(
-#   DEPENDENCIES
-#   std_msgs  # Or other packages containing msgs
-# )
+generate_messages(
+  DEPENDENCIES
+  std_msgs  # Or other packages containing msgs
+)
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
@@ -113,7 +112,7 @@ find_package(gazebo REQUIRED)
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES model_push
-  CATKIN_DEPENDS roscpp gazebo_ros 
+  CATKIN_DEPENDS roscpp gazebo_ros message_runtime 
 )
 
 ###########
@@ -130,15 +129,23 @@ include_directories(
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
 ## either from message generation or dynamic reconfigure
-# add_dependencies(${PROJECT_NAME} ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+#add_dependencies(${PROJECT_NAME} ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Declare a C++ executable
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
 # add_executable(${PROJECT_NAME}_node src/model_push_node.cpp)
 add_library(${PROJECT_NAME}_node SHARED model_push.cc)
+add_executable(force_cmd force_cmd.cc)
+target_link_libraries(force_cmd ${catkin_LIBRARIES})
+add_dependencies(force_cmd model_push_generate_messages_cpp)
+#add_executable(talker talker.cpp)
+#target_link_libraries(talker ${catkin_LIBRARIES})
+#add_dependencies(talker model_push_generate_messages_cpp)
 
-
+#add_executable(listener listener.cpp)
+#target_link_libraries(listener ${catkin_LIBRARIES})
+#add_dependencies(listener model_push_generate_messages_cpp)
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
 ## target back to the shorter version for ease of user use
@@ -153,6 +160,7 @@ add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catk
 target_link_libraries(${PROJECT_NAME}_node
   ${catkin_LIBRARIES} ${GAZEBO_LIBRARIES}
 )
+#target_link_libraries(force ${GAZEBO_LIBRARIES})
 
 #############
 ## Install ##

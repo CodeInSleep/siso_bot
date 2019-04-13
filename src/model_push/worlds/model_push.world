@@ -44,7 +44,9 @@
         </inertial>
       </link>
 
-      <plugin name="model_push" filename="libmodel_push.so"/>
+      <plugin name="model_push" filename="libmodel_push.so">
+        <force>5</force>
+      </plugin>
     </model>        
   </world>
 </sdf>
