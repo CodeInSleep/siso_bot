@@ -43,9 +43,13 @@
           </inertia>
         </inertial>
       </link>
-
-      <plugin name="model_push" filename="libmodel_push.so">
-        <force>5</force>
+      
+      <plugin name="mode_push" filename="libmodel_push.so">
+        <alwaysOn>true</alwaysOn>
+        <update>100</update>
+        <updateRate>100.0</updateRate>
+        <bodyName>link</bodyName>
+        <topicName>force_cmd</topicName>
       </plugin>
     </model>        
   </world>

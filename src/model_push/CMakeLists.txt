@@ -15,6 +15,9 @@ find_package(catkin REQUIRED COMPONENTS
   message_generation
   genmsg
 )
+find_package(Boost REQUIRED COMPONENTS thread)
+
+
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
 find_package(gazebo REQUIRED)
@@ -88,10 +91,6 @@ generate_messages(
 ##     find_package(catkin REQUIRED COMPONENTS ...)
 ##   * uncomment the "generate_dynamic_reconfigure_options" section below
 ##     and list every .cfg file to be processed
-find_package(catkin REQUIRED COMPONENTS
-  roscpp
-  gazebo_ros
-)
 
 find_package(gazebo REQUIRED)
 ## Generate dynamic reconfigure parameters in the 'cfg' folder
@@ -113,6 +112,7 @@ catkin_package(
   INCLUDE_DIRS include
   LIBRARIES model_push
   CATKIN_DEPENDS roscpp gazebo_ros message_runtime 
+  DEPENDS Boost
 )
 
 ###########
@@ -122,9 +122,13 @@ catkin_package(
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 include_directories(
-# include
+  include
   ${catkin_INCLUDE_DIRS} ${GAZEBO_INCLUDE_DIRS}
 )
+if (Boost_FOUND)
+  include_directories(${Boost_INCLUDE_DIR})
+  ADD_DEFINITIONS("-DHAS_BOOST")
+endif()
 
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
@@ -160,7 +164,7 @@ add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catk
 target_link_libraries(${PROJECT_NAME}_node
   ${catkin_LIBRARIES} ${GAZEBO_LIBRARIES}
 )
-#target_link_libraries(force ${GAZEBO_LIBRARIES})
+
 
 #############
 ## Install ##
