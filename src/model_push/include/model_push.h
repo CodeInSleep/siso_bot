@@ -28,7 +28,7 @@
 // Custom Callback Queue
 #include <ros/callback_queue.h>
 #include <ros/subscribe_options.h>
-#include <geometry_msgs/Wrench.h>
+#include <geometry_msgs/Point.h>
 
 #include <ros/ros.h>
 #include <boost/thread.hpp>
@@ -84,7 +84,7 @@ class GazeboRosForce : public ModelPlugin
 
   /// \brief call back when a Wrench message is published
   /// \param[in] _msg The Incoming ROS message representing the new force to exert.
-  private: void UpdateObjectForce(const geometry_msgs::Wrench::ConstPtr& _msg);
+  private: void UpdateObjectForce(const geometry_msgs::Point::ConstPtr& _msg);
   private: void ResetForce(const ros::TimerEvent&);
 
   /// \brief The custom callback queue thread function.
@@ -95,8 +95,9 @@ class GazeboRosForce : public ModelPlugin
   private: physics::WorldPtr world_;
 
   /// \brief A pointer to the Link, where force is applied
-  private: physics::LinkPtr link_;
-
+  private: physics::JointPtr r_joint_;
+  private: physics::JointPtr l_joint_;
+  private: physics::LinkPtr chassis_;
   /// \brief A pointer to the ROS node.  A node will be instantiated if it does not exist.
   private: ros::NodeHandle* rosnode_;
   private: ros::Subscriber sub_;
@@ -107,7 +108,8 @@ class GazeboRosForce : public ModelPlugin
   /// \brief ROS Wrench topic name inputs
   private: std::string topic_name_;
   /// \brief The Link this plugin is attached to, and will exert forces on.
-  private: std::string link_name_;
+  private: std::string lj_name_;
+  private: std::string rj_name_;
 
   /// \brief for setting ROS name space
   private: std::string robot_namespace_;
@@ -117,8 +119,8 @@ class GazeboRosForce : public ModelPlugin
   /// \brief Thead object for the running callback Thread.
   private: boost::thread callback_queue_thread_;
   /// \brief Container for the wrench force that this plugin exerts on the body.
-  private: geometry_msgs::Wrench wrench_msg_;
-
+  private: double ljf_;
+  private: double rjf_;
   // Pointer to the update event connection
   private: event::ConnectionPtr update_connection_;
 

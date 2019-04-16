@@ -1,29 +1,6 @@
-/*Copyright 2013 Open Source Robotics Foundation
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
-*/
-
-/*
-   Desc: GazeboRosForce plugin for manipulating objects in Gazebo
-   Author: John Hsu
-   Date: 24 Sept 2008
- */
-
 #include <algorithm>
 #include <assert.h>
 #include <time.h>
-
 #include "model_push.h"
 namespace gazebo
 {
@@ -33,12 +10,8 @@ GZ_REGISTER_MODEL_PLUGIN(GazeboRosForce);
 // Constructor
 GazeboRosForce::GazeboRosForce()
 {
-  this->wrench_msg_.force.x = 0;
-  this->wrench_msg_.force.y = 0;
-  this->wrench_msg_.force.z = 0;
-  this->wrench_msg_.torque.x = 0;
-  this->wrench_msg_.torque.y = 0;
-  this->wrench_msg_.torque.z = 0;
+  this->ljf_ = 0;
+  this->rjf_ = 0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -69,21 +42,36 @@ void GazeboRosForce::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf)
   if (_sdf->HasElement("robotNamespace"))
     this->robot_namespace_ = _sdf->GetElement("robotNamespace")->Get<std::string>() + "/";
 
-  if (!_sdf->HasElement("bodyName"))
+  if (!_sdf->HasElement("leftJoint"))
   {
-    ROS_FATAL_NAMED("force", "force plugin missing <bodyName>, cannot proceed");
+    ROS_FATAL_NAMED("force", "force plugin missing <leftJoint>, cannot proceed");
     return;
   }
   else
-    this->link_name_ = _sdf->GetElement("bodyName")->Get<std::string>();
+    this->lj_name_ = _sdf->GetElement("leftJoint")->Get<std::string>();
 
-  this->link_ = _model->GetLink(this->link_name_);
-  if (!this->link_)
+  if (!_sdf->HasElement("rightJoint"))
   {
-    ROS_FATAL_NAMED("force", "gazebo_ros_force plugin error: link named: %s does not exist\n",this->link_name_.c_str());
+    ROS_FATAL_NAMED("force", "force plugin missing <rightJoint>, cannot proceed");
+    return;
+  }
+  else
+    this->rj_name_ = _sdf->GetElement("rightJoint")->Get<std::string>();
+
+  this->l_joint_ = _model->GetJoint(this->lj_name_);
+  if (!this->l_joint_)
+  {
+    ROS_FATAL_NAMED("force", "gazebo_ros_force plugin error: link named: left joint does not exist\n");
+    return;
+  }
+  this->r_joint_ = _model->GetJoint(this->rj_name_);
+  if (!this->r_joint_)
+  {
+    ROS_FATAL_NAMED("force", "gazebo_ros_force plugin error: link named: right joint does not exist\n");
     return;
   }
 
+  this->chassis_ = _model->GetLink("chassis");
   if (!_sdf->HasElement("topicName"))
   {
     ROS_FATAL_NAMED("force", "force plugin missing <topicName>, cannot proceed");
@@ -94,7 +82,7 @@ void GazeboRosForce::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf)
 
   std::cout << "robotNamespace: " << this->robot_namespace_ << ", " <<  
       "subscribing to topic: " << this->topic_name_ << ", " << 
-      "applying to link: " << this->link_name_ << std::endl;
+      "applying to link: " << this->lj_name_ << " and " << this->rj_name_ << std::endl;
   // Make sure the ROS node for Gazebo has already been initialized
   if (!ros::isInitialized())
   {
@@ -107,7 +95,7 @@ void GazeboRosForce::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf)
   std::cout << "ROS NODE initialized" << std::endl;
   // Custom Callback Queue
   
-ros::SubscribeOptions so = ros::SubscribeOptions::create<geometry_msgs::Wrench>(
+ros::SubscribeOptions so = ros::SubscribeOptions::create<geometry_msgs::Point>(
     this->topic_name_,1,
     boost::bind( &GazeboRosForce::UpdateObjectForce,this,_1),
     ros::VoidPtr(), &this->queue_);
@@ -124,21 +112,42 @@ ros::SubscribeOptions so = ros::SubscribeOptions::create<geometry_msgs::Wrench>(
       boost::bind(&GazeboRosForce::UpdateChild, this));
 }
 
+std::string printFloat(const float &f) {
+  std::ostringstream ss;
+  ss << f;
+  std::string s(ss.str());
+  return s;
+}
 ////////////////////////////////////////////////////////////////////////////////
 // Update the controller
-void GazeboRosForce::UpdateObjectForce(const geometry_msgs::Wrench::ConstPtr& _msg)
+void GazeboRosForce::UpdateObjectForce(const geometry_msgs::Point::ConstPtr& _msg)
 {
-  //std::cout << "updating object force.." << std::endl;
-  this->wrench_msg_.force.x = _msg->force.x;
-  this->wrench_msg_.force.y = _msg->force.y;
-  this->wrench_msg_.force.z = _msg->force.z;
-  this->wrench_msg_.torque.x = _msg->torque.x;
-  this->wrench_msg_.torque.y = _msg->torque.y;
-  this->wrench_msg_.torque.z = _msg->torque.z;
-   // reset forces to 0 after 1 second
+  std::cout << "updating object force.." << std::endl;
+  std::cout << "left joint: " << printFloat(_msg->x) << ", right joint: " << printFloat(_msg->y) << std::endl; 
+
+  this->ljf_ = _msg->x;
+  this->rjf_ = _msg->x;
+ 
   this->timer = this->rosnode_->createTimer(ros::Duration(1), boost::bind(&GazeboRosForce::ResetForce, this, _1), true);
  
-  /*
+
+  //ignition::math::Vector3d force(_msg->x, 0, 0);
+  //ignition::math::Vector3d rel(-0.2, 0.2, 0.1);
+ 
+  /* 
+  int running = 1;
+  time_t start = time(NULL);
+  time_t end;
+  while (running) {
+    end = time(NULL);
+    if (difftime(end, start) > 1)
+      running = 0;
+    this->chassis_->AddForceAtRelativePosition(force, rel);
+  }*/
+   //this->r_joint_->SetForce(0, _msg->x);
+  //this->l_joint_->SetForce(0, _msg->y);
+  // reset forces to 0 after 1 second
+   /*
   time_t start, end;
   double elapsed;
   start = time(NULL);
@@ -163,36 +172,25 @@ void GazeboRosForce::UpdateObjectForce(const geometry_msgs::Wrench::ConstPtr& _m
 
 void GazeboRosForce::ResetForce(const ros::TimerEvent& event) {
   //std::cout << "reseting forces.." << std::endl;
-
-  this->wrench_msg_.force.x = 0;
-  this->wrench_msg_.force.y = 0;
-  this->wrench_msg_.force.z = 0;
-  this->wrench_msg_.torque.x = 0;
-  this->wrench_msg_.torque.y = 0;
-  this->wrench_msg_.torque.z = 0;
+  this->chassis_->ResetPhysicsStates();
+  this->ljf_ = 0;
+  this->rjf_ = 0;
 }
 
-std::string printFloat(const float &f) {
-  std::ostringstream ss;
-  ss << f;
-  std::string s(ss.str());
-  return s;
-}
 ////////////////////////////////////////////////////////////////////////////////
 // Update the controller
 void GazeboRosForce::UpdateChild()
 {
-  double fx = this->wrench_msg_.force.x;
-  double fy = this->wrench_msg_.force.y;
-  double fz = this->wrench_msg_.force.z;
+  //double fx = this->wrench_msg_.force.x;
+  //double fy = this->wrench_msg_.force.y;
+  //double fz = this->wrench_msg_.force.z;
   //std::cout << "fx: " << printFloat(fx) << std::endl;
   //std::cout << "fy: " << printFloat(fy) << std::endl;
   //std::cout << "fz: " << printFloat(fz) << std::endl;
 
-  ignition::math::Vector3d force(fx, fy, fz);
-  ignition::math::Vector3d rel(-0.5, 0, 0);  
-  physics::LinkPtr body = this->model_->GetLink("link");
-  body->AddForceAtRelativePosition(force, rel);
+  ignition::math::Vector3d force(this->ljf_, 0, 0);
+  //ignition::math::Vector3d rel(-0.2, 0, 0.1);  
+  this->chassis_->SetForce(force);
 }
 
 
