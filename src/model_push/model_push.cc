@@ -37,41 +37,7 @@ void GazeboRosForce::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf)
   // Get the world name.
   this->world_ = _model->GetWorld();
 
-  // load parameters
-  this->robot_namespace_ = "";
-  if (_sdf->HasElement("robotNamespace"))
-    this->robot_namespace_ = _sdf->GetElement("robotNamespace")->Get<std::string>() + "/";
-
-  if (!_sdf->HasElement("leftJoint"))
-  {
-    ROS_FATAL_NAMED("force", "force plugin missing <leftJoint>, cannot proceed");
-    return;
-  }
-  else
-    this->lj_name_ = _sdf->GetElement("leftJoint")->Get<std::string>();
-
-  if (!_sdf->HasElement("rightJoint"))
-  {
-    ROS_FATAL_NAMED("force", "force plugin missing <rightJoint>, cannot proceed");
-    return;
-  }
-  else
-    this->rj_name_ = _sdf->GetElement("rightJoint")->Get<std::string>();
-
-  this->l_joint_ = _model->GetJoint(this->lj_name_);
-  if (!this->l_joint_)
-  {
-    ROS_FATAL_NAMED("force", "gazebo_ros_force plugin error: link named: left joint does not exist\n");
-    return;
-  }
-  this->r_joint_ = _model->GetJoint(this->rj_name_);
-  if (!this->r_joint_)
-  {
-    ROS_FATAL_NAMED("force", "gazebo_ros_force plugin error: link named: right joint does not exist\n");
-    return;
-  }
-
-  this->chassis_ = _model->GetLink("chassis");
+  this->chassis_ = _model->GetLink("link");  
   if (!_sdf->HasElement("topicName"))
   {
     ROS_FATAL_NAMED("force", "force plugin missing <topicName>, cannot proceed");
@@ -81,8 +47,7 @@ void GazeboRosForce::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf)
     this->topic_name_ = _sdf->GetElement("topicName")->Get<std::string>();
 
   std::cout << "robotNamespace: " << this->robot_namespace_ << ", " <<  
-      "subscribing to topic: " << this->topic_name_ << ", " << 
-      "applying to link: " << this->lj_name_ << " and " << this->rj_name_ << std::endl;
+      "subscribing to topic: " << this->topic_name_ << ", " << std::endl;
   // Make sure the ROS node for Gazebo has already been initialized
   if (!ros::isInitialized())
   {
@@ -91,6 +56,7 @@ void GazeboRosForce::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf)
     return;
   }
 
+  this->robot_namespace_ = "myrobot_ns";
   this->rosnode_ = new ros::NodeHandle(this->robot_namespace_);
   std::cout << "ROS NODE initialized" << std::endl;
   // Custom Callback Queue
@@ -126,7 +92,7 @@ void GazeboRosForce::UpdateObjectForce(const geometry_msgs::Point::ConstPtr& _ms
   std::cout << "left joint: " << printFloat(_msg->x) << ", right joint: " << printFloat(_msg->y) << std::endl; 
 
   this->ljf_ = _msg->x;
-  this->rjf_ = _msg->x;
+  this->rjf_ = _msg->y;
  
   this->timer = this->rosnode_->createTimer(ros::Duration(1), boost::bind(&GazeboRosForce::ResetForce, this, _1), true);
  
@@ -188,9 +154,10 @@ void GazeboRosForce::UpdateChild()
   //std::cout << "fy: " << printFloat(fy) << std::endl;
   //std::cout << "fz: " << printFloat(fz) << std::endl;
 
-  ignition::math::Vector3d force(this->ljf_, 0, 0);
+  //ignition::math::Vector3d force(this->ljf_, 0, 0);
   //ignition::math::Vector3d rel(-0.2, 0, 0.1);  
-  this->chassis_->SetForce(force);
+  this->l_joint_->SetForce(2, this->ljf_);
+  this->r_joint_->SetForce(2, this->rjf_);
 }
 
 
