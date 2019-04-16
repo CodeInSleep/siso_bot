@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <assert.h>
+#include <time.h>
 
 #include "model_push.h"
 namespace gazebo
@@ -59,6 +60,7 @@ GazeboRosForce::~GazeboRosForce()
 // Load the controller
 void GazeboRosForce::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf)
 {
+  this->model_ = _model;
   // Get the world name.
   this->world_ = _model->GetWorld();
 
@@ -126,24 +128,41 @@ ros::SubscribeOptions so = ros::SubscribeOptions::create<geometry_msgs::Wrench>(
 // Update the controller
 void GazeboRosForce::UpdateObjectForce(const geometry_msgs::Wrench::ConstPtr& _msg)
 {
-  std::cout << "updating object force.." << std::endl;
+  //std::cout << "updating object force.." << std::endl;
   this->wrench_msg_.force.x = _msg->force.x;
   this->wrench_msg_.force.y = _msg->force.y;
   this->wrench_msg_.force.z = _msg->force.z;
   this->wrench_msg_.torque.x = _msg->torque.x;
   this->wrench_msg_.torque.y = _msg->torque.y;
   this->wrench_msg_.torque.z = _msg->torque.z;
+   // reset forces to 0 after 1 second
+  this->timer = this->rosnode_->createTimer(ros::Duration(1), boost::bind(&GazeboRosForce::ResetForce, this, _1), true);
+ 
+  /*
+  time_t start, end;
+  double elapsed;
+  start = time(NULL);
+  int running = 1;
+  
+  this->lock_.lock();
+  ignition::math::Vector3d force(_msg->force.x,_msg->force.y,_msg->force.z);
+  this->link_->SetForce(force);
+  this->lock_.unlock();
 
-  // reset forces to 0 after 1 second
-  // this->timer = this->rosnode_->createTimer(ros::Duration(1), boost::bind(&GazeboRosForce::ResetForce, this, _1), true);
+  while (running) {
+    end = time(NULL);
+    elapsed = difftime(end, start);
+    if (elapsed >= 1)
+      running = 0;
+  }
+
+  ignition::math::Vector3d zforce(0, 0, 0);
+  this->link_->SetForce(zforce);
+*/
 }
 
 void GazeboRosForce::ResetForce(const ros::TimerEvent& event) {
-  std::cout << "reseting forces.." << std::endl;
-  ignition::math::Vector3d force(-this->wrench_msg_.force.x,-this->wrench_msg_.force.y,-this->wrench_msg_.force.z);
- 
-  ignition::math::Vector3d relVec(0.5, 0, 0);
-  this->link_->AddForceAtRelativePosition(force, relVec);
+  //std::cout << "reseting forces.." << std::endl;
 
   this->wrench_msg_.force.x = 0;
   this->wrench_msg_.force.y = 0;
@@ -153,19 +172,29 @@ void GazeboRosForce::ResetForce(const ros::TimerEvent& event) {
   this->wrench_msg_.torque.z = 0;
 }
 
-
+std::string printFloat(const float &f) {
+  std::ostringstream ss;
+  ss << f;
+  std::string s(ss.str());
+  return s;
+}
 ////////////////////////////////////////////////////////////////////////////////
 // Update the controller
 void GazeboRosForce::UpdateChild()
 {
-  this->lock_.lock();
-  ignition::math::Vector3d force(this->wrench_msg_.force.x,this->wrench_msg_.force.y,this->wrench_msg_.force.z);
-  ignition::math::Vector3d torque(this->wrench_msg_.torque.x,this->wrench_msg_.torque.y,this->wrench_msg_.torque.z);
-  ignition::math::Vector3d relVec(-0.5, 0, 0);
-  this->link_->AddForceAtRelativePosition(force, relVec);
-  this->link_->AddTorque(torque);
-  this->lock_.unlock();
+  double fx = this->wrench_msg_.force.x;
+  double fy = this->wrench_msg_.force.y;
+  double fz = this->wrench_msg_.force.z;
+  //std::cout << "fx: " << printFloat(fx) << std::endl;
+  //std::cout << "fy: " << printFloat(fy) << std::endl;
+  //std::cout << "fz: " << printFloat(fz) << std::endl;
+
+  ignition::math::Vector3d force(fx, fy, fz);
+  ignition::math::Vector3d rel(-0.5, 0, 0);  
+  physics::LinkPtr body = this->model_->GetLink("link");
+  body->AddForceAtRelativePosition(force, rel);
 }
+
 
 // Custom Callback Queue
 ////////////////////////////////////////////////////////////////////////////////
@@ -173,11 +202,12 @@ void GazeboRosForce::UpdateChild()
 
 void GazeboRosForce::QueueThread()
 {
-  static const double timeout = 0.01;
+  static const double timeout = 0.05;
 
   while (this->rosnode_->ok())
   {
-    this->queue_.callAvailable(ros::WallDuration(timeout));
+    this->queue_.callOne(ros::WallDuration(timeout));
+    
   }
 }
 

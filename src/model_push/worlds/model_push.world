@@ -11,6 +11,13 @@
       <uri>model://sun</uri>
     </include>
 
+    <physics type='ode'>
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1</real_time_factor>
+      <real_time_update_rate>1000</real_time_update_rate>
+      <gravity>0 0 -9.8</gravity>
+    </physics>
+
     <model name="ball">
       <pose>0 0 0.5 0 0 0</pose>
       <link name="link">
@@ -20,6 +27,14 @@
               <radius>0.5</radius>
             </sphere> 
           </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>0.3</mu>
+                <mu>0.3</mu>
+              </ode>
+            </friction>
+          </surface>
         </collision>
 
         <visual name="visual">
@@ -32,7 +47,7 @@
         
         <inertial>
           <pose>0 0 0.5 0 0 0</pose>
-          <mass>1</mass>
+          <mass>3</mass>
           <inertia>
             <ixx>1.0</ixx>
             <ixy>0</ixy>
@@ -42,10 +57,12 @@
             <izz>1.0</izz>
           </inertia>
         </inertial>
+        <velocity_decay>
+          <linear>0.5</linear>
+        </velocity_decay>
       </link>
       
       <plugin name="mode_push" filename="libmodel_push.so">
-        <alwaysOn>true</alwaysOn>
         <update>100</update>
         <updateRate>100.0</updateRate>
         <bodyName>link</bodyName>
