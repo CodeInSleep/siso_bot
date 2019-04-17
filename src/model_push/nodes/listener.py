@@ -17,7 +17,7 @@ def gms_client(model_name,relative_entity_name):
 
 if __name__ == "__main__":
     model_name = "my_robot"
-    relative_entity_name = "chassis"
+    relative_entity_name = "world"
     while True:
       res = gms_client(model_name,relative_entity_name)
       print "return x position ",res.pose.position

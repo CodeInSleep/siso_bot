@@ -57,7 +57,7 @@
           </surface>
         </collision>
         <inertial>
-          <mass value="5"/>
+          <mass>5</mass>
         </inertial>
         <visual name='caster_visual'>
           <pose>-0.15 0 -0.05 0 0 0</pose>

@@ -128,7 +128,7 @@ void GazeboRosForce::UpdateObjectForce(const geometry_msgs::Point::ConstPtr& _ms
   this->ljf_ = _msg->x;
   this->rjf_ = _msg->x;
  
-  this->timer = this->rosnode_->createTimer(ros::Duration(1), boost::bind(&GazeboRosForce::ResetForce, this, _1), true);
+  this->timer = this->rosnode_->createTimer(ros::Duration(3), boost::bind(&GazeboRosForce::ResetForce, this, _1), true);
  
 
   //ignition::math::Vector3d force(_msg->x, 0, 0);
