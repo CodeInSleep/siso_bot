@@ -1,8 +1,6 @@
 <launch>
-  <!--node pkg="model_push" type="model_push.py" name="pusher"/-->  
-  <!--node pkg="model_push" type="listener.py" name="listener" output="screen"/-->
   <include file="$(find gazebo_ros)/launch/empty_world.launch">
     <arg name="world_name" value="$(find model_push)/worlds/model_push.world"/>
   </include>
-   
+  <node pkg="model_push" type="listener.py" name="listener" output="screen"/>
 </launch>
