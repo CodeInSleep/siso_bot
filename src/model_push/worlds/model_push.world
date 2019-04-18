@@ -48,8 +48,8 @@
           <surface>
             <friction>
               <ode>
-                <mu>0.4</mu>
-                <mu2>0.4</mu2>
+                <mu>0.3</mu>
+                <mu2>0.3</mu2>
                 <slip1>1.0</slip1>
                 <slip2>1.0</slip2>
               </ode>
@@ -126,6 +126,7 @@
       </joint>
       <plugin name="model_push" filename="libmodel_push.so">
         <alwaysOn>true</alwaysOn>
+        <robotNamespace>robot_car_node</robotNamespace>
         <leftJoint>left_wheel_hinge</leftJoint>
         <rightJoint>right_wheel_hinge</rightJoint>
         <topicName>force_cmd</topicName>

@@ -12,6 +12,9 @@ GazeboRosForce::GazeboRosForce()
 {
   this->ljf_ = 0;
   this->rjf_ = 0;
+  int argc = 0;
+  char **argv = NULL;
+  ros::init(argc, argv, "robot_car_node");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -171,8 +174,7 @@ void GazeboRosForce::UpdateObjectForce(const geometry_msgs::Point::ConstPtr& _ms
 }
 
 void GazeboRosForce::ResetForce(const ros::TimerEvent& event) {
-  //std::cout << "reseting forces.." << std::endl;
-  this->chassis_->ResetPhysicsStates();
+  std::cout << "reseting forces.." << std::endl;
   this->ljf_ = 0;
   this->rjf_ = 0;
 }
@@ -181,13 +183,6 @@ void GazeboRosForce::ResetForce(const ros::TimerEvent& event) {
 // Update the controller
 void GazeboRosForce::UpdateChild()
 {
-  //double fx = this->wrench_msg_.force.x;
-  //double fy = this->wrench_msg_.force.y;
-  //double fz = this->wrench_msg_.force.z;
-  //std::cout << "fx: " << printFloat(fx) << std::endl;
-  //std::cout << "fy: " << printFloat(fy) << std::endl;
-  //std::cout << "fz: " << printFloat(fz) << std::endl;
-
   ignition::math::Vector3d force(this->ljf_, 0, 0);
   //ignition::math::Vector3d rel(-0.2, 0, 0.1);  
   this->chassis_->SetForce(force);
@@ -204,8 +199,7 @@ void GazeboRosForce::QueueThread()
 
   while (this->rosnode_->ok())
   {
-    this->queue_.callOne(ros::WallDuration(timeout));
-    
+    this->queue_.callAvailable(ros::WallDuration(timeout));
   }
 }
 
