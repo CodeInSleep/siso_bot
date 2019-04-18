@@ -181,13 +181,6 @@ void GazeboRosForce::ResetForce(const ros::TimerEvent& event) {
 // Update the controller
 void GazeboRosForce::UpdateChild()
 {
-  //double fx = this->wrench_msg_.force.x;
-  //double fy = this->wrench_msg_.force.y;
-  //double fz = this->wrench_msg_.force.z;
-  //std::cout << "fx: " << printFloat(fx) << std::endl;
-  //std::cout << "fy: " << printFloat(fy) << std::endl;
-  //std::cout << "fz: " << printFloat(fz) << std::endl;
-
   ignition::math::Vector3d force(this->ljf_, 0, 0);
   //ignition::math::Vector3d rel(-0.2, 0, 0.1);  
   this->chassis_->SetForce(force);
