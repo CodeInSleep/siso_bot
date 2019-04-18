@@ -62,10 +62,13 @@ def gls_client(link_name,reference_frame):
 def vector3_mag(v):
     return math.sqrt(v.x**2 + v.y**2 + v.z**2)
 
+<<<<<<< HEAD
 def truncate(num, digits):
   stepper = pow(10.0, digits)
   return math.trunc(num*stepper)/stepper
 
+=======
+>>>>>>> 83d8da95725210cbb99431509990829b766e6d5b
 if __name__ == "__main__":
     print(os.getcwd())
 
@@ -74,6 +77,7 @@ if __name__ == "__main__":
     right_wheel_name = model_name + "::right_wheel"
     world_name = "world"
 
+<<<<<<< HEAD
     forces = [20]
     pub_num_times = [1]
 
@@ -81,6 +85,14 @@ if __name__ == "__main__":
     # create a ros node for the robot car plugin
     pub = rospy.Publisher('robot_car_node/force_cmd', Point, queue_size=10)
     rospy.init_node('siso_client')
+=======
+    forces = [1]
+
+    data = []
+
+    pub = rospy.Publisher('force_cmd', Point)
+    rospy.init_node('siso_client', anonymous=True)
+>>>>>>> 83d8da95725210cbb99431509990829b766e6d5b
     rate = rospy.Rate(10)
 
     moving_threshold = 0.01
@@ -88,14 +100,19 @@ if __name__ == "__main__":
     physics_res = gpp_client()
     #spp_client(0.000001, physics_res.max_update_rate, physics_res.gravity, physics_res.ode_config)
 
+<<<<<<< HEAD
 
     for idx, force in enumerate(forces):
+=======
+    for force in forces:
+>>>>>>> 83d8da95725210cbb99431509990829b766e6d5b
         print("Running car with force %d..." % force) 
 
         msg = Point()
         msg.x = force
         msg.y = force
 
+<<<<<<< HEAD
         counter = 0     
         # flag to check whether the robot car has moved 
         moved = False
@@ -104,6 +121,9 @@ if __name__ == "__main__":
             if counter < pub_num_times[idx]:
               pub.publish(msg)
               counter += 1
+=======
+        while True:
+>>>>>>> 83d8da95725210cbb99431509990829b766e6d5b
             world_res = gwp_client()
             sim_time = world_res.sim_time
 
@@ -116,6 +136,7 @@ if __name__ == "__main__":
             right_wheel_vel = right_wheel_res.link_state.twist.angular
 
             data_entry = [sim_time,
+<<<<<<< HEAD
                           truncate(left_wheel_vel.x, 6),
                           truncate(left_wheel_vel.y, 6),
                           truncate(left_wheel_vel.z, 6),
@@ -144,3 +165,32 @@ if __name__ == "__main__":
                 writer.writerow(row)
         print('wrote to file')
     rospy.spin()
+=======
+                          left_wheel_vel.x,
+                          left_wheel_vel.y,
+                          left_wheel_vel.z,
+                          right_wheel_vel.x,
+                          right_wheel_vel.y,
+                          right_wheel_vel.z,
+                          model_pos.x,
+                          model_pos.y,
+                          model_pos.z]
+
+            #print(','.join([str(x) for x in data_entry]))
+
+            data.append(data_entry)
+
+            if sim_time <= 1:
+                pub.publish(msg)
+
+            if (sim_time > 1 and vector3_mag(left_wheel_vel) < moving_threshold and vector3_mag(right_wheel_vel) < moving_threshold) or (sim_time > 180):
+                print("Finished")
+                break; 
+
+            rate.sleep()
+        
+        with open('data.csv', 'w+') as csvfile:
+            writer = csv.writer(csvfile)
+            for row in data:
+                writer.writerow(row)
+>>>>>>> 83d8da95725210cbb99431509990829b766e6d5b
