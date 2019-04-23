@@ -1,0 +1,17 @@
+Three Gates:
+  1. Forget Gate Layer(sigmoid) - decide what information we're going to throw away from the cell state
+  2. Input Gate Layer(sigmoid) - decides which values we'll update
+	(tanh) - creates new candidate cell state
+  3. Output Gate Layer(tanh+sigmoid) - pass cell state through tanh (values to be between -1 and 1) and
+	multiply it by the output of the sigmoid gate to output parts we decide to.
+
+
+Assumptions we do not make:
+  1. that the robot is going to behave ideally, hence our commands on the robot 
+	(without any control components) will deviate from the ideal course.
+  2.  
+
+
+Additional things we can do:
+  1. Add controller (such as MPC) onto the robot to control the robot movement
+
