@@ -15,6 +15,7 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error
 import pdb
 
+fname = 'data.csv'
 # create a new dataset by adding past values as features at each time step
 def create_dataset(dataset, look_back=1):
     dataX, dataY = [], []
@@ -25,14 +26,10 @@ def create_dataset(dataset, look_back=1):
     return np.array(dataX), np.array(dataY)
 
 if __name__ == '__main__':
-    if sys.argc != 2:
-        print('Usage: "python script.py DATA_FILENAME"')
-        sys.exit()
-    if not os.path.isdir(os.environ['DATA_DIR']):
+   if not os.path.isdir(os.environ['SISO_DATA_DIR']):
         print('invalid DATA_DIR (set in ~/sisobot/export_path.sh')
 
-    dirpath = os.environ['DATA_DIR']
-    fname = sys.argv[1]
+    dirpath = os.environ['SISO_DATA_DIR']
 
     datafile = os.path.join(dirpath, fname)
     df = pd.read_csv(datafile, engine='python')

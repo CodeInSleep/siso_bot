@@ -2,4 +2,5 @@
 build/*
 devel/*
 logs/*
+data/*
 .catkin_tools/*
