@@ -71,7 +71,7 @@ if __name__ == "__main__":
         print('Usage "python script.py DATA_FILENAME"')
         sys.exit()
     if not os.path.isdir(os.environ['DATA_DIR']):
-        print('invalid DATA_DIR (set it in ~/sisobot/export_path.sh')
+        print('invalid DATA_DIR (set it in ~/.bashrc')
     
     dirpath = os.environ['DATA_DIR']
     fname = argv[1]

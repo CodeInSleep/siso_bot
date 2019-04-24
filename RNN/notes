@@ -14,4 +14,23 @@ Assumptions we do not make:
 
 Additional things we can do:
   1. Add controller (such as MPC) onto the robot to control the robot movement
+  2. Add system order determination order to make the method more generalizable
+  3. As of now, the method used for parameter estimation use is PEM (which requires some apriori knowledge), but can be used without apriori knowledge if 2 is implemented.
+Additional Settings
+  1. parameter initialization
+  2. recursive recurrent learning algorithm derived from ordered derivatives
 
+Parameters:
+- A, B, C
+- p = 2 inputs and m = 3 outputs
+- A: J x 2
+- B: J X J
+- C: 3 x J
+
+total number of parameters: J(J+p+m+2)
+
+Transforms:
+Normalization
+Difference Transform
+
+one-step forecasts v.s. dynamic multi-step forecast

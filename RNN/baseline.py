@@ -15,6 +15,8 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error
 import pdb
 
+fname = 'data.csv'
+
 # create a new dataset by adding past values as features at each time step
 def create_dataset(dataset, look_back=1):
     dataX, dataY = [], []
@@ -25,15 +27,11 @@ def create_dataset(dataset, look_back=1):
     return np.array(dataX), np.array(dataY)
 
 if __name__ == '__main__':
-    if sys.argc != 2:
-        print('Usage: "python script.py DATA_FILENAME"')
-        sys.exit()
-    if not os.path.isdir(os.environ['DATA_DIR']):
-        print('invalid DATA_DIR (set in ~/sisobot/export_path.sh')
+    if not os.path.isdir(os.environ['SISO_DATA_DIR']):
+        print('invalid DATA_DIR (set in ~/.bashrc')
 
-    dirpath = os.environ['DATA_DIR']
-    fname = sys.argv[1]
-
+    dirpath = os.environ['SISO_DATA_DIR']
+    
     datafile = os.path.join(dirpath, fname)
     df = pd.read_csv(datafile, engine='python')
     df = df[['model_pos_x']]
@@ -113,8 +111,8 @@ if __name__ == '__main__':
     testPredictPlot[:, :] = 0
     testPredictPlot[len(trainPredict)+(look_back*2)+1:len(df)-1, :] = testPredict
     # plot baseline and predictions
-    plt.plot(trainPredict.flatten(), color='green')
-    plt.plot(testPredict.flatten(), color='red')
+    plt.plot(trainPredictPlot.flatten(), color='green')
+    plt.plot(testPredictPlot.flatten(), color='red')
     plt.show()
 
 
