@@ -28,6 +28,7 @@
 // Custom Callback Queue
 #include <ros/callback_queue.h>
 #include <ros/subscribe_options.h>
+#include <geometry_msgs/Point32.h>
 #include <geometry_msgs/Point.h>
 
 #include <ros/ros.h>
@@ -84,7 +85,7 @@ class GazeboRosForce : public ModelPlugin
 
   /// \brief call back when a Wrench message is published
   /// \param[in] _msg The Incoming ROS message representing the new force to exert.
-  private: void UpdateObjectForce(const geometry_msgs::Point::ConstPtr& _msg);
+  private: void UpdateObjectForce(const geometry_msgs::Point32::ConstPtr& _msg);
   private: void ResetForce(const ros::TimerEvent&);
 
   /// \brief The custom callback queue thread function.
@@ -101,7 +102,7 @@ class GazeboRosForce : public ModelPlugin
   /// \brief A pointer to the ROS node.  A node will be instantiated if it does not exist.
   private: ros::NodeHandle* rosnode_;
   private: ros::Subscriber sub_;
-
+  private: ros::Publisher pub_;
   /// \brief A mutex to lock access to fields that are used in ROS message callbacks
   private: boost::mutex lock_;
 
@@ -119,8 +120,8 @@ class GazeboRosForce : public ModelPlugin
   /// \brief Thead object for the running callback Thread.
   private: boost::thread callback_queue_thread_;
   /// \brief Container for the wrench force that this plugin exerts on the body.
-  private: double ljf_;
-  private: double rjf_;
+  private: double ljv_;
+  private: double rjv_;
   // Pointer to the update event connection
   private: event::ConnectionPtr update_connection_;
 

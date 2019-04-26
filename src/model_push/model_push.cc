@@ -10,8 +10,8 @@ GZ_REGISTER_MODEL_PLUGIN(GazeboRosForce);
 // Constructor
 GazeboRosForce::GazeboRosForce()
 {
-  this->ljf_ = 0;
-  this->rjf_ = 0;
+  this->ljv_ = 0;
+  this->rjv_ = 0;
   int argc = 0;
   char **argv = NULL;
   ros::init(argc, argv, "robot_car_node");
@@ -96,9 +96,11 @@ void GazeboRosForce::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf)
 
   this->rosnode_ = new ros::NodeHandle(this->robot_namespace_);
   std::cout << "ROS NODE initialized" << std::endl;
-  // Custom Callback Queue
   
-ros::SubscribeOptions so = ros::SubscribeOptions::create<geometry_msgs::Point>(
+  this->pub_ = this->rosnode_->advertise<geometry_msgs::Point32>("current_input", 10);
+  
+  // Custom Callback Queue  
+  ros::SubscribeOptions so = ros::SubscribeOptions::create<geometry_msgs::Point32>(
     this->topic_name_,1,
     boost::bind( &GazeboRosForce::UpdateObjectForce,this,_1),
     ros::VoidPtr(), &this->queue_);
@@ -111,8 +113,8 @@ ros::SubscribeOptions so = ros::SubscribeOptions::create<geometry_msgs::Point>(
   // New Mechanism for Updating every World Cycle
   // Listen to the update event. This event is broadcast every
   // simulation iteration.
-  this->update_connection_ = event::Events::ConnectWorldUpdateBegin(
-      boost::bind(&GazeboRosForce::UpdateChild, this));
+  // this->update_connection_ = event::Events::ConnectWorldUpdateBegin(
+  //    boost::bind(&GazeboRosForce::UpdateChild, this));
 }
 
 std::string printFloat(const float &f) {
@@ -123,30 +125,33 @@ std::string printFloat(const float &f) {
 }
 ////////////////////////////////////////////////////////////////////////////////
 // Update the controller
-void GazeboRosForce::UpdateObjectForce(const geometry_msgs::Point::ConstPtr& _msg)
+void GazeboRosForce::UpdateObjectForce(const geometry_msgs::Point32::ConstPtr& _msg)
 {
   std::cout << "updating object force.." << std::endl;
   std::cout << "left joint: " << printFloat(_msg->x) << ", right joint: " << printFloat(_msg->y) << std::endl; 
 
-  this->ljf_ = _msg->x;
-  this->rjf_ = _msg->x;
- 
-  this->timer = this->rosnode_->createTimer(ros::Duration(3), boost::bind(&GazeboRosForce::ResetForce, this, _1), true);
+  this->ljv_ = _msg->x;
+  this->rjv_ = _msg->y;
+  this->l_joint_->SetVelocity(0, this->ljv_);
+  this->r_joint_->SetVelocity(0, this->rjv_);
+  // tell client that velocities have been update
+  geometry_msgs::Point32 current_input;
+  current_input.x = this->ljv_;
+  current_input.y = this->rjv_;
+  this->pub_.publish(current_input);
+  this->timer = this->rosnode_->createTimer(ros::Duration(_msg->z), boost::bind(&GazeboRosForce::ResetForce, this, _1), true);
 } 
 
 void GazeboRosForce::ResetForce(const ros::TimerEvent& event) {
   std::cout << "reseting forces.." << std::endl;
-  this->ljf_ = 0;
-  this->rjf_ = 0;
+  this->l_joint_->SetVelocity(0, 0);
+  this->r_joint_->SetVelocity(0, 0);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Update the controller
 void GazeboRosForce::UpdateChild()
 {
-  ignition::math::Vector3d force(this->ljf_, 0, 0);
-  //ignition::math::Vector3d rel(-0.2, 0, 0.1);  
-  this->chassis_->SetForce(force);
 }
 
 // Custom Callback Queue
