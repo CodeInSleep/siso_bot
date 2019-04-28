@@ -132,46 +132,7 @@ void GazeboRosForce::UpdateObjectForce(const geometry_msgs::Point::ConstPtr& _ms
   this->rjf_ = _msg->x;
  
   this->timer = this->rosnode_->createTimer(ros::Duration(3), boost::bind(&GazeboRosForce::ResetForce, this, _1), true);
- 
-
-  //ignition::math::Vector3d force(_msg->x, 0, 0);
-  //ignition::math::Vector3d rel(-0.2, 0.2, 0.1);
- 
-  /* 
-  int running = 1;
-  time_t start = time(NULL);
-  time_t end;
-  while (running) {
-    end = time(NULL);
-    if (difftime(end, start) > 1)
-      running = 0;
-    this->chassis_->AddForceAtRelativePosition(force, rel);
-  }*/
-   //this->r_joint_->SetForce(0, _msg->x);
-  //this->l_joint_->SetForce(0, _msg->y);
-  // reset forces to 0 after 1 second
-   /*
-  time_t start, end;
-  double elapsed;
-  start = time(NULL);
-  int running = 1;
-  
-  this->lock_.lock();
-  ignition::math::Vector3d force(_msg->force.x,_msg->force.y,_msg->force.z);
-  this->link_->SetForce(force);
-  this->lock_.unlock();
-
-  while (running) {
-    end = time(NULL);
-    elapsed = difftime(end, start);
-    if (elapsed >= 1)
-      running = 0;
-  }
-
-  ignition::math::Vector3d zforce(0, 0, 0);
-  this->link_->SetForce(zforce);
-*/
-}
+} 
 
 void GazeboRosForce::ResetForce(const ros::TimerEvent& event) {
   std::cout << "reseting forces.." << std::endl;
@@ -187,7 +148,6 @@ void GazeboRosForce::UpdateChild()
   //ignition::math::Vector3d rel(-0.2, 0, 0.1);  
   this->chassis_->SetForce(force);
 }
-
 
 // Custom Callback Queue
 ////////////////////////////////////////////////////////////////////////////////

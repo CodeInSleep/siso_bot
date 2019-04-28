@@ -14,6 +14,8 @@ from geometry_msgs.msg import Point
 import math
 #from std_msgs.msg import String
 
+fname = 'data.csv'
+
 def gpp_client():
     rospy.wait_for_service('/gazebo/get_physics_properties')
     try:
@@ -67,15 +69,12 @@ def truncate(num, digits):
   return math.trunc(num*stepper)/stepper
 
 if __name__ == "__main__":
-    if sys.argc != 2:
-        print('Usage "python script.py DATA_FILENAME"')
-        sys.exit()
-    if not os.path.isdir(os.environ['DATA_DIR']):
-        print('invalid DATA_DIR (set it in ~/.bashrc')
-    
-    dirpath = os.environ['DATA_DIR']
-    fname = argv[1]
 
+    if not os.path.isdir(os.environ['SISO_DATA_DIR']):
+        print('invalid DATA_DIR (set it in ~/sisobot/export_path.sh')
+    
+    dirpath = os.environ['SISO_DATA_DIR']
+    
     model_name = "my_robot"
     left_wheel_name = model_name + "::left_wheel"
     right_wheel_name = model_name + "::right_wheel"
@@ -142,12 +141,13 @@ if __name__ == "__main__":
               moved = True
             
             rate.sleep()
-        
+
+        if not os.path.exists(dirpath):
+            os.makedirs(dirpath)        
         with open(os.path.join(dirpath, fname), 'w+') as csvfile:
             writer = csv.writer(csvfile)
-            writer.writerow(['left_wheel_vel_x', 'left_wheel_vel_y', 'left_wheel_vel_z', 'right_wheel_vel_x', 'right_wheel_vel_y', 'right_wheel_vel_z', 'model_pos_x', 'model_pos_y', 'model_pos_z'])
+            writer.writerow(['sim_time', 'left_wheel_vel_x', 'left_wheel_vel_y', 'left_wheel_vel_z', 'right_wheel_vel_x', 'right_wheel_vel_y', 'right_wheel_vel_z', 'model_pos_x', 'model_pos_y', 'model_pos_z'])
             for row in data:
                 writer.writerow(row)
         print('wrote to file')
     rospy.spin()
-
