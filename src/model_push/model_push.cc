@@ -139,7 +139,7 @@ void GazeboRosForce::UpdateObjectForce(const geometry_msgs::Point32::ConstPtr& _
   current_input.x = this->ljv_;
   current_input.y = this->rjv_;
   this->pub_.publish(current_input);
-  this->timer = this->rosnode_->createTimer(ros::Duration(_msg->z), boost::bind(&GazeboRosForce::ResetForce, this, _1), true);
+  //this->timer = this->rosnode_->createTimer(ros::Duration(_msg->z), boost::bind(&GazeboRosForce::ResetForce, this, _1), true);
 } 
 
 void GazeboRosForce::ResetForce(const ros::TimerEvent& event) {
