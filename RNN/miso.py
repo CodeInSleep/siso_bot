@@ -38,6 +38,7 @@ others = ['sim_time']
 def twoD2threeD(np_array):
     return np_array.reshape(1, np_array.shape[0], np_array.shape[1])
 
+
 def calc_error(model, X, y, output_scaler):
     rmse = 0
     predictions = np.array([np.squeeze(model.predict(twoD2threeD(X[i]), batch_size=batch_size), axis=0) for i in range(len(X))])
@@ -59,7 +60,6 @@ if __name__ == '__main__':
 
     X_train, X_test, y_train, y_test, train_trial_names, test_trial_names, output_scaler, start_times, max_duration = transform(df, input_fields, output_fields)
 
-    pdb.set_trace()
     batch_size = 1
     model = Sequential()
     model.add(Dense(p, batch_input_shape=(batch_size, max_duration, p), name='input_layer'))
@@ -86,7 +86,18 @@ if __name__ == '__main__':
     train_predictions = np.array([np.squeeze(model.predict(twoD2threeD(X_train[i]), batch_size=batch_size), axis=0) for i in range(len(X_train))])
     
     test_predictions = np.array([np.squeeze(model.predict(twoD2threeD(X_test[i]), batch_size=batch_size), axis=0) for i in range(len(X_test))])
+   
+    def unnorm(arr_3D, scaler):
+        arr_3D_unnorm = np.zeros(arr_3D.shape)
+        for i in range(len(arr_3D_unnorm)):
+            arr_3D_unnorm[i] = scaler.inverse_transform(arr_3D[i])
+        return arr_3D_unnorm
 
+    np.save('train_predictions.npy', unnorm(train_predictions, output_scaler)) 
+    np.save('test_predictions.npy', unnorm(test_predictions, output_scaler))
+    
+    np.save('train_ground.npy', unnorm(y_train, output_scaler))
+    np.save('test_ground.npy', y_test)
     plt.figure()
     plt.title('RMSE of train and test dataset')
     epoch_range = range(0, epochs, period)
