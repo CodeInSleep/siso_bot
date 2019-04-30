@@ -37,6 +37,8 @@ def transform_group(group_df, max_duration, output_fields):
     return padded_group_df
 
 def transform(df, input_fields, output_fields, train_percentage=0.7, count=-1):
+    np.random.seed(7)
+
     df['left_pwm'] = df['left_pwm'].apply(truncate, args=(3,))
     df['right_pwm'] = df['right_pwm'].apply(truncate, args=(3,))
     df['input'] = 'l_'+df['left_pwm'].map(str)+'_r_'+df['right_pwm'].map(str)
@@ -58,12 +60,12 @@ def transform(df, input_fields, output_fields, train_percentage=0.7, count=-1):
     n_train = int(num_trials*train_percentage)
 
     # the start time of every trial, used later to recover trajectories
-    start_times = grouped.first()
+    start_states = grouped.first()
 
-    #df.loc[:,'sim_time'] = grouped.apply(lambda x: x.loc[:, ['sim_time']].diff().cumsum().fillna(0))
     # remove the bias of starting points in each trial
     df.loc[:, output_fields] = grouped.apply(
-        lambda x: x.loc[:, output_fields] - start_times.loc[x.name].loc[output_fields])
+        lambda x: x.loc[:, output_fields] - start_states.loc[x.name].loc[output_fields])
+    
     # create new data frame that is of (# of trials, max_duration dimenstion) 
     df = df.groupby(['input']).apply(lambda x: transform_group(x, max_duration, output_fields))
 
@@ -73,12 +75,15 @@ def transform(df, input_fields, output_fields, train_percentage=0.7, count=-1):
     test_samples = np.array([i for i in range(num_trials) if i not in train_samples])
     test_trial_names = [trial_names[i] for i in test_samples]
 
+    print('train trial names: ', train_trial_names)
+    print('test trial names: ', test_trial_names)
     train_data = df.loc[train_trial_names, :]
     test_data = df.loc[test_trial_names, :] 
-
+    
+    pdb.set_trace()
     # normalize the output differences
-    train_data.loc[:, output_fields] = output_scaler.fit_transform(train_data.loc[:, output_fields])
-    test_data.loc[:, output_fields] = output_scaler.transform(test_data.loc[:, output_fields])
+    # train_data.loc[:, output_fields] = output_scaler.fit_transform(train_data.loc[:, output_fields])
+    # test_data.loc[:, output_fields] = output_scaler.transform(test_data.loc[:, output_fields])
 
     # unstack time series to columns
     train_data = train_data.unstack(level=1)
@@ -94,9 +99,11 @@ def transform(df, input_fields, output_fields, train_percentage=0.7, count=-1):
     X_test = test_data[input_fields].values.reshape(num_trials-n_train, p, max_duration).transpose(0, 2, 1)
     y_train = train_data[output_fields].values.reshape(n_train, J, max_duration).transpose(0, 2, 1)
     y_test = test_data[output_fields].values.reshape(num_trials-n_train, J, max_duration).transpose(0, 2, 1)
-
+    
+    # convert start states dataframe to regular dictionary
+    start_states = start_states.to_dict(orient='index')
     # access trial of specific inputs with df.loc['INPUT_VALUES', :]
-    return (X_train, X_test, y_train, y_test, train_trial_names, test_trial_names, output_scaler, start_times, max_duration)
+    return (X_train, X_test, y_train, y_test, train_trial_names, test_trial_names, output_scaler, start_states, max_duration)
 
 def inverse_transform(predictions, target, start_times):
     # undo what transform function did, converting numpy array to pandas DF

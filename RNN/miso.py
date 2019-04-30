@@ -41,10 +41,12 @@ def twoD2threeD(np_array):
 
 def calc_error(model, X, y, output_scaler):
     rmse = 0
-    predictions = np.array([np.squeeze(model.predict(twoD2threeD(X[i]), batch_size=batch_size), axis=0) for i in range(len(X))])
+    predictions = np.array([np.squeeze(model.predict(twoD2threeD(X[i]),
+        batch_size=batch_size), axis=0) for i in range(len(X))])
 
     for i in range(len(predictions)):
-        rmse += np.sqrt(mean_squared_error(y[i], output_scaler.inverse_transform(predictions[i])))
+        # rmse += np.sqrt(mean_squared_error(y[i], output_scaler.inverse_transform(predictions[i])))
+        rmse += np.sqrt(mean_squared_error(y[i], predictions[i]))
     return rmse/y.size
 
 if __name__ == '__main__':
@@ -58,14 +60,17 @@ if __name__ == '__main__':
     df = pd.read_csv(datafile, engine='python')
     df = df[input_fields+output_fields+others]
 
-    X_train, X_test, y_train, y_test, train_trial_names, test_trial_names, output_scaler, start_times, max_duration = transform(df, input_fields, output_fields)
+    X_train, X_test, y_train, y_test, train_trial_names, test_trial_names, \
+        output_scaler, start_states, max_duration = transform(df, input_fields, output_fields)
 
     batch_size = 1
     model = Sequential()
     model.add(Dense(p, batch_input_shape=(batch_size, max_duration, p), name='input_layer'))
-    model.add(Dense(J, batch_input_shape=(batch_size, max_duration,), activation='tanh', name='hidden_layer'))
+    model.add(Dense(J, batch_input_shape=(batch_size, max_duration,),
+        activation='tanh', name='hidden_layer'))
     model.add(LSTM(J, batch_input_shape=(batch_size, max_duration, J), name='dynamic_layer',
-    kernel_initializer=Identity(J), stateful=True, return_sequences=True))
+        kernel_initializer=Identity(J), stateful=False, return_sequences=True, activation='tanh'))
+    model.add(Dense(J))
     model.compile(loss='mean_squared_error', optimizer='adam')
 
     epochs = 300
@@ -75,29 +80,49 @@ if __name__ == '__main__':
     test_loss_history = []
     for i in range(epochs):
         for j in range(len(X_train)):
-            model.fit(twoD2threeD(X_train[j]), twoD2threeD(y_train[j]), epochs=1, batch_size=batch_size, verbose=0, shuffle=False)
+            model.fit(twoD2threeD(X_train[j]), twoD2threeD(y_train[j]), epochs=1,
+                    batch_size=batch_size, verbose=0, shuffle=False)
     
         if i % period == 0:
             # plot learning curve
             train_loss_history.append(calc_error(model, X_train, y_train, output_scaler))
             test_loss_history.append(calc_error(model, X_test, y_test, output_scaler))
-   
-    # examine results
-    train_predictions = np.array([np.squeeze(model.predict(twoD2threeD(X_train[i]), batch_size=batch_size), axis=0) for i in range(len(X_train))])
+
+     # examine results
+    train_predictions = np.array([np.squeeze(model.predict(twoD2threeD(X_train[i]),
+        batch_size=batch_size), axis=0) for i in range(len(X_train))])
     
-    test_predictions = np.array([np.squeeze(model.predict(twoD2threeD(X_test[i]), batch_size=batch_size), axis=0) for i in range(len(X_test))])
+    test_predictions = np.array([np.squeeze(model.predict(twoD2threeD(X_test[i]),
+        batch_size=batch_size), axis=0) for i in range(len(X_test))])
    
-    def unnorm(arr_3D, scaler):
+    def unnorm_and_undiff(arr_3D, scaler, trial_names, init_conditions):
         arr_3D_unnorm = np.zeros(arr_3D.shape)
         for i in range(len(arr_3D_unnorm)):
-            arr_3D_unnorm[i] = scaler.inverse_transform(arr_3D[i])
+            # arr_3D_unnorm[i] = scaler.inverse_transform(arr_3D[i])
+            # TODO: restore original trace (i.e. undo trial offset)
+            # cumulate sum on x and y positions
+            arr_3D_unnorm[i] = np.cumsum(arr_3D_unnorm[i], axis=0)
+        
         return arr_3D_unnorm
 
-    np.save('train_predictions.npy', unnorm(train_predictions, output_scaler)) 
-    np.save('test_predictions.npy', unnorm(test_predictions, output_scaler))
+    np.save('raw_train_predictions.npy', train_predictions)
+    np.save('raw_test_predictions.npy', test_predictions)
+    np.save('y_train.npy', y_train)
+    np.save('y_test.npy', y_test)
+    # Unormalize predictions and undo differencing by using cumsum()
+    # To debug check if train_gnd is the same as the data from original dataframe
+    train_predictions = unnorm_and_undiff(train_predictions, output_scaler,
+            train_trial_names, start_states)
+    test_predictions = unnorm_and_undiff(test_predictions, output_scaler,
+            test_trial_names, start_states)
+    train_gnd = unnorm_and_undiff(y_train, output_scaler, train_trial_names, start_states)
+    test_gnd = unnorm_and_undiff(y_test, output_scaler, train_trial_names, start_states)
+
+    np.save('train_predictions.npy', train_predictions) 
+    np.save('test_predictions.npy', test_predictions)
     
-    np.save('train_ground.npy', unnorm(y_train, output_scaler))
-    np.save('test_ground.npy', y_test)
+    np.save('train_ground.npy', train_gnd)
+    np.save('test_ground.npy', test_gnd)
     plt.figure()
     plt.title('RMSE of train and test dataset')
     epoch_range = range(0, epochs, period)
