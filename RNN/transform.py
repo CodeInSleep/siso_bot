@@ -31,7 +31,7 @@ def transform_group(group_df, max_duration, output_fields):
     # pad the time series with 
     padded_group_df = pd.DataFrame(pd.np.row_stack([group_df, padding]))
     padded_group_df.columns = cols 
-    padded_group_df.loc[:, output_fields] = padded_group_df.loc[:, output_fields].diff()
+    #padded_group_df.loc[:, output_fields] = padded_group_df.loc[:, output_fields].diff()
     padded_group_df = padded_group_df.fillna(0)
 
     return padded_group_df

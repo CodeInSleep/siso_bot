@@ -38,7 +38,6 @@ others = ['sim_time']
 def twoD2threeD(np_array):
     return np_array.reshape(1, np_array.shape[0], np_array.shape[1])
 
-
 def calc_error(model, X, y, output_scaler):
     rmse = 0
     predictions = np.array([np.squeeze(model.predict(twoD2threeD(X[i]),
@@ -68,8 +67,8 @@ if __name__ == '__main__':
     model.add(Dense(p, batch_input_shape=(batch_size, max_duration, p), name='input_layer'))
     model.add(Dense(J, batch_input_shape=(batch_size, max_duration,),
         activation='tanh', name='hidden_layer'))
-    model.add(LSTM(J, batch_input_shape=(batch_size, max_duration, J), name='dynamic_layer',
-        kernel_initializer=Identity(J), stateful=False, return_sequences=True, activation='tanh'))
+    model.add(SimpleRNN(J, batch_input_shape=(batch_size, max_duration, J), name='dynamic_layer',
+        return_sequences=True, activation='tanh'))
     model.add(Dense(J))
     model.compile(loss='mean_squared_error', optimizer='adam')
 
@@ -111,13 +110,14 @@ if __name__ == '__main__':
     np.save('y_test.npy', y_test)
     # Unormalize predictions and undo differencing by using cumsum()
     # To debug check if train_gnd is the same as the data from original dataframe
+    '''
     train_predictions = unnorm_and_undiff(train_predictions, output_scaler,
             train_trial_names, start_states)
     test_predictions = unnorm_and_undiff(test_predictions, output_scaler,
             test_trial_names, start_states)
     train_gnd = unnorm_and_undiff(y_train, output_scaler, train_trial_names, start_states)
     test_gnd = unnorm_and_undiff(y_test, output_scaler, train_trial_names, start_states)
-
+    '''
     np.save('train_predictions.npy', train_predictions) 
     np.save('test_predictions.npy', test_predictions)
     
