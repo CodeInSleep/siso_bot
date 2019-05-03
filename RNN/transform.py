@@ -63,8 +63,8 @@ def transform(df, train_percentage=0.7, count=-1):
     grouped = df.groupby(df.index)
     num_trials = len(grouped)
 
-    for key, item in grouped:
-        print(grouped.get_group(key), '\n\n')
+    #for key, item in grouped:
+    #    print(grouped.get_group(key), '\n\n')
 
     # store max duration of a trial
     max_duration = max(grouped['sim_time'].count())
@@ -75,19 +75,25 @@ def transform(df, train_percentage=0.7, count=-1):
 
     # df.loc[:,'sim_time'] = grouped.apply(lambda x: x.loc[:, ['sim_time']].diff().cumsum().fillna(0))
 
-    fig = plt.figure()
-    ax1 = fig.add_subplot(111)
-    visualize_3D([grouped.get_group('l_3.0_r_6.0').loc[:, output_fields].values], ax1, plt_arrow=True)
+    debug = True
+    debug_trial = 'l_6.0_r_4.0'
+
+    if debug:
+        fig = plt.figure()
+        ax1 = fig.add_subplot(111)
+        visualize_3D([grouped.get_group(debug_trial).loc[:, output_fields].values], ax1, plt_arrow=True)
     # remove the bias of starting points in each trial
     df.loc[:, output_fields] = grouped.apply(
-        lambda x: x.loc[:, output_fields] - start_times.loc[x.name].loc[output_fields])
+            lambda x: x.loc[:, output_fields] - start_times.loc[x.name].loc[output_fields])
     grouped = df.groupby(df.index)
+    # remove bias in theta
     df.loc[:, ['model_pos_x', 'model_pos_y']] = grouped.apply(
-            lambda x: rotate(x.loc[:, ['model_pos_x', 'model_pos_y']], start_times.loc[x.name].loc['theta']))
-    pdb.set_trace()
-    grouped = df.groupby(df.index)   
-    visualize_3D([grouped.get_group('l_3.0_r_6.0').loc[:, output_fields].values], ax1, plt_arrow=True)
-    plt.show()
+            lambda x: rotate(x.loc[:, ['model_pos_x', 'model_pos_y']], -start_times.loc[x.name].loc['theta']))
+    #pdb.set_trace()
+    if debug:
+        grouped = df.groupby(df.index)   
+        visualize_3D([grouped.get_group(debug_trial).loc[:, output_fields].values], ax1, plt_arrow=True)
+        plt.show()
 
     # create new data frame that is of (# of trials, max_duration dimenstion) 
     df = df.groupby(['input']).apply(lambda x: transform_group(x, max_duration))
