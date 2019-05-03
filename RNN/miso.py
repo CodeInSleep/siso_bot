@@ -21,7 +21,7 @@ import pdb
 
 from IPython.display import SVG
 from keras.utils.vis_utils import model_to_dot
-from transform import transform
+from transform import transform, input_fields, output_fields, others
 from keras.utils import plot_model
 #TODO:
 #  - implement cross validation to plot learning curve
@@ -31,13 +31,8 @@ def shape_it(X):
 os.environ["SISO_DATA_DIR"] = '/Users/li-wei/siso_bot/RNN/data/'
 fname = 'data2.csv'
 
-input_fields = ['left_pwm', 'right_pwm']
-output_fields = ['model_pos_x', 'model_pos_y', 'theta']
-others = ['sim_time']
-
 def twoD2threeD(np_array):
     return np_array.reshape(1, np_array.shape[0], np_array.shape[1])
-
 
 def calc_error(model, X, y, output_scaler):
     rmse = 0
@@ -91,6 +86,7 @@ if __name__ == '__main__':
         arr_3D_unnorm = np.zeros(arr_3D.shape)
         for i in range(len(arr_3D_unnorm)):
             arr_3D_unnorm[i] = scaler.inverse_transform(arr_3D[i])
+        arr_3D_unnorm = arr_3D_unnorm.cumsum(axis=0)
         return arr_3D_unnorm
 
     np.save('train_predictions.npy', unnorm(train_predictions, output_scaler)) 

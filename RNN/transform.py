@@ -2,8 +2,15 @@ import math
 import pandas as pd
 import numpy as np
 import pdb
+import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
+from visualize import visualize_3D
 
+input_fields = ['left_pwm', 'right_pwm']
+output_fields = ['model_pos_x', 'model_pos_y', 'theta']
+others = ['sim_time']
+
+np.random.seed(7)
 def truncate(num, digits):
     stepper = pow(10.0, digits)
     return math.trunc(num*stepper)/stepper
@@ -20,7 +27,12 @@ def difference(dataset, interval=1):
 def inverse_difference(last_ob, value):
     return value + last_ob
 
-def transform_group(group_df, max_duration, output_fields):
+def rotate(xy_df, rad):
+    # rotational matrix
+    rotation = np.array([[math.cos(rad), -math.sin(rad)], [math.sin(rad), math.cos(rad)]])
+    return pd.DataFrame(np.matmul(rotation, xy_df.T).T)
+
+def transform_group(group_df, max_duration):
     group_df = group_df.reset_index().drop('input', axis=1)
     cols = group_df.columns
   
@@ -31,12 +43,13 @@ def transform_group(group_df, max_duration, output_fields):
     # pad the time series with 
     padded_group_df = pd.DataFrame(pd.np.row_stack([group_df, padding]))
     padded_group_df.columns = cols 
-    padded_group_df.loc[:, output_fields] = padded_group_df.loc[:, output_fields].diff()
+    # padded_group_df.loc[:, output_fields] = padded_group_df.loc[:, output_fields].diff()
     padded_group_df = padded_group_df.fillna(0)
 
     return padded_group_df
 
-def transform(df, input_fields, output_fields, train_percentage=0.7, count=-1):
+def transform(df, train_percentage=0.7, count=-1):
+    df['theta'] = df['theta'].apply(lambda x: math.radians(x))
     df['left_pwm'] = df['left_pwm'].apply(truncate, args=(3,))
     df['right_pwm'] = df['right_pwm'].apply(truncate, args=(3,))
     df['input'] = 'l_'+df['left_pwm'].map(str)+'_r_'+df['right_pwm'].map(str)
@@ -60,12 +73,24 @@ def transform(df, input_fields, output_fields, train_percentage=0.7, count=-1):
     # the start time of every trial, used later to recover trajectories
     start_times = grouped.first()
 
-    #df.loc[:,'sim_time'] = grouped.apply(lambda x: x.loc[:, ['sim_time']].diff().cumsum().fillna(0))
+    # df.loc[:,'sim_time'] = grouped.apply(lambda x: x.loc[:, ['sim_time']].diff().cumsum().fillna(0))
+
+    fig = plt.figure()
+    ax1 = fig.add_subplot(111)
+    visualize_3D([grouped.get_group('l_3.0_r_6.0').loc[:, output_fields].values], ax1, plt_arrow=True)
     # remove the bias of starting points in each trial
     df.loc[:, output_fields] = grouped.apply(
         lambda x: x.loc[:, output_fields] - start_times.loc[x.name].loc[output_fields])
+    grouped = df.groupby(df.index)
+    df.loc[:, ['model_pos_x', 'model_pos_y']] = grouped.apply(
+            lambda x: rotate(x.loc[:, ['model_pos_x', 'model_pos_y']], start_times.loc[x.name].loc['theta']))
+    pdb.set_trace()
+    grouped = df.groupby(df.index)   
+    visualize_3D([grouped.get_group('l_3.0_r_6.0').loc[:, output_fields].values], ax1, plt_arrow=True)
+    plt.show()
+
     # create new data frame that is of (# of trials, max_duration dimenstion) 
-    df = df.groupby(['input']).apply(lambda x: transform_group(x, max_duration, output_fields))
+    df = df.groupby(['input']).apply(lambda x: transform_group(x, max_duration))
 
     trial_names = df.index.levels[0]
     train_samples = np.random.choice(num_trials, n_train, replace=False)
@@ -77,8 +102,8 @@ def transform(df, input_fields, output_fields, train_percentage=0.7, count=-1):
     test_data = df.loc[test_trial_names, :] 
 
     # normalize the output differences
-    train_data.loc[:, output_fields] = output_scaler.fit_transform(train_data.loc[:, output_fields])
-    test_data.loc[:, output_fields] = output_scaler.transform(test_data.loc[:, output_fields])
+    # train_data.loc[:, output_fields] = output_scaler.fit_transform(train_data.loc[:, output_fields])
+    # test_data.loc[:, output_fields] = output_scaler.transform(test_data.loc[:, output_fields])
 
     # unstack time series to columns
     train_data = train_data.unstack(level=1)
