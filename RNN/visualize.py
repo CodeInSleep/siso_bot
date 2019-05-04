@@ -34,6 +34,10 @@ if __name__ == '__main__':
     ax1 = fig.add_subplot(121)
     ax2 = fig.add_subplot(122)
 
-    visualize_3D(train_pred, ax1)
-    visualize_3D(train_ground, ax2)
+    #visualize_3D(train_pred, ax1)
+    #visualize_3D(train_ground, ax2)
+    ax1.plot(train_pred.flatten())
+    ax1.set_title('train prediction')
+    ax2.plot(train_ground.flatten())
+    ax2.set_title('ground truth')
     plt.show()

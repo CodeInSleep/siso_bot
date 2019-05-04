@@ -35,6 +35,7 @@ def twoD2threeD(np_array):
     return np_array.reshape(1, np_array.shape[0], np_array.shape[1])
 
 def calc_error(model, X, y, output_scaler):
+    # X, y are 3D
     rmse = 0
     predictions = np.array([np.squeeze(model.predict(twoD2threeD(X[i]),
         batch_size=batch_size), axis=0) for i in range(len(X))])
@@ -65,30 +66,32 @@ if __name__ == '__main__':
         activation='tanh', name='hidden_layer'))
     model.add(SimpleRNN(J, batch_input_shape=(batch_size, max_duration, J), name='dynamic_layer',
         return_sequences=True, activation='tanh'))
-    model.add(Dense(J))
+    model.add(Dense(1))
     model.compile(loss='mean_squared_error', optimizer='adam')
 
-    iterations = 10
+    iterations = 30
     epochs = 30
     period = 10
     # learning curver
     train_loss_history = []
     test_loss_history = []
    
-    pdb.set_trace()
+    # for debug purposes
+    _X_train = X_train[0]
+    _y_train = y_train[0][:,:1]
+    _X_test = X_test[0]
+    _y_test = y_test[0][:,:1]
     # plot learning curve
     for it in range(iterations):
-        model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0, shuffle=False)
-    
-        train_loss_history.append(calc_error(model, X_train, y_train, output_scaler))
-        test_loss_history.append(calc_error(model, X_test, y_test, output_scaler))
+        model.fit(twoD2threeD(_X_train), twoD2threeD(_y_train), epochs=epochs, batch_size=batch_size, verbose=0, shuffle=False)
+
+        train_loss_history.append(calc_error(model, twoD2threeD(_X_train), twoD2threeD(_y_train), output_scaler))
+        test_loss_history.append(calc_error(model, twoD2threeD(_X_test), twoD2threeD(_y_test), output_scaler))
 
      # examine results
-    train_predictions = np.array([np.squeeze(model.predict(twoD2threeD(X_train[i]),
-        batch_size=batch_size), axis=0) for i in range(len(X_train))])
+    train_predictions = np.array([np.squeeze(model.predict(twoD2threeD(_X_train),batch_size=batch_size), axis=0)])
     
-    test_predictions = np.array([np.squeeze(model.predict(twoD2threeD(X_test[i]),
-        batch_size=batch_size), axis=0) for i in range(len(X_test))])
+    test_predictions = np.array([np.squeeze(model.predict(twoD2threeD(_X_test), batch_size=batch_size), axis=0)])
    
     #def unnorm_and_undiff(arr_3D, scaler, trial_names, init_conditions):
     #    arr_3D_unnorm = np.zeros(arr_3D.shape)
@@ -108,13 +111,13 @@ if __name__ == '__main__':
     np.save('train_predictions.npy', train_predictions) 
     np.save('test_predictions.npy', test_predictions)
     
-    np.save('train_ground.npy', y_train)
-    np.save('test_ground.npy', y_test)
+    np.save('train_ground.npy', _y_train)
+    np.save('test_ground.npy', _y_test)
     plt.figure()
     plt.title('RMSE of train and test dataset')
-    epoch_range = range(0, epochs, period)
-    plt.plot(epoch_range, train_loss_history)
-    plt.plot(epoch_range, test_loss_history)
+    it_range = range(0, iterations)
+    plt.plot(it_range, train_loss_history)
+    plt.plot(it_range, test_loss_history)
     plt.legend(['train', 'test'])
     plt.show()
 
