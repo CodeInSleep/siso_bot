@@ -30,7 +30,10 @@ if __name__ == '__main__':
     train_ground = np.load('train_ground.npy')
     pdb.set_trace()
 
-    for ground, pred in zip(train_pred, train_ground):
-        plot_arrows(ground)
-        plot_arrows(pred)
-        plt.show()
+    fig = plt.figure()
+    ax1 = fig.add_subplot(121)
+    ax2 = fig.add_subplot(122)
+
+    visualize_3D(train_pred, ax1)
+    visualize_3D(train_ground, ax2)
+    plt.show()

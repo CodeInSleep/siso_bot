@@ -56,7 +56,7 @@ if __name__ == '__main__':
     df = df[input_fields+output_fields+others]
 
     X_train, X_test, y_train, y_test, train_trial_names, test_trial_names, \
-        output_scaler, start_states, max_duration = transform(df, input_fields, output_fields)
+        output_scaler, start_states, max_duration = transform(df)
 
     batch_size = 1
     model = Sequential()
@@ -90,19 +90,13 @@ if __name__ == '__main__':
     test_predictions = np.array([np.squeeze(model.predict(twoD2threeD(X_test[i]),
         batch_size=batch_size), axis=0) for i in range(len(X_test))])
    
-    def unnorm_and_undiff(arr_3D, scaler, trial_names, init_conditions):
-        arr_3D_unnorm = np.zeros(arr_3D.shape)
-        for i in range(len(arr_3D_unnorm)):
-            arr_3D_unnorm[i] = scaler.inverse_transform(arr_3D[i])
-        arr_3D_unnorm = arr_3D_unnorm.cumsum(axis=0)
-        return arr_3D_unnorm
+    #def unnorm_and_undiff(arr_3D, scaler, trial_names, init_conditions):
+    #    arr_3D_unnorm = np.zeros(arr_3D.shape)
+    #    for i in range(len(arr_3D_unnorm)):
+    #        arr_3D_unnorm[i] = scaler.inverse_transform(arr_3D[i])
+    #    arr_3D_unnorm = arr_3D_unnorm.cumsum(axis=0)
+    #    return arr_3D_unnorm
 
-    np.save('raw_train_predictions.npy', train_predictions)
-    np.save('raw_test_predictions.npy', test_predictions)
-    np.save('y_train.npy', y_train)
-    np.save('y_test.npy', y_test)
-    # Unormalize predictions and undo differencing by using cumsum()
-    # To debug check if train_gnd is the same as the data from original dataframe
     '''
     train_predictions = unnorm_and_undiff(train_predictions, output_scaler,
             train_trial_names, start_states)
@@ -114,8 +108,8 @@ if __name__ == '__main__':
     np.save('train_predictions.npy', train_predictions) 
     np.save('test_predictions.npy', test_predictions)
     
-    np.save('train_ground.npy', train_gnd)
-    np.save('test_ground.npy', test_gnd)
+    np.save('train_ground.npy', y_train)
+    np.save('test_ground.npy', y_test)
     plt.figure()
     plt.title('RMSE of train and test dataset')
     epoch_range = range(0, epochs, period)

@@ -83,12 +83,11 @@ def transform(df, train_percentage=0.7, count=-1):
         visualize_3D([grouped.get_group(debug_trial).loc[:, output_fields].values], ax1, plt_arrow=True)
     # remove the bias of starting points in each trial
     df.loc[:, output_fields] = grouped.apply(
-            lambda x: x.loc[:, output_fields] - start_times.loc[x.name].loc[output_fields])
+            lambda x: x.loc[:, output_fields] - start_states.loc[x.name].loc[output_fields])
     grouped = df.groupby(df.index)
     # remove bias in theta
     df.loc[:, ['model_pos_x', 'model_pos_y']] = grouped.apply(
-            lambda x: rotate(x.loc[:, ['model_pos_x', 'model_pos_y']], -start_times.loc[x.name].loc['theta']))
-    #pdb.set_trace()
+            lambda x: rotate(x.loc[:, ['model_pos_x', 'model_pos_y']], -start_states.loc[x.name].loc['theta']))
     if debug:
         grouped = df.groupby(df.index)   
         visualize_3D([grouped.get_group(debug_trial).loc[:, output_fields].values], ax1, plt_arrow=True)
@@ -108,7 +107,6 @@ def transform(df, train_percentage=0.7, count=-1):
     train_data = df.loc[train_trial_names, :]
     test_data = df.loc[test_trial_names, :] 
     
-    pdb.set_trace()
     # normalize the output differences
     # train_data.loc[:, output_fields] = output_scaler.fit_transform(train_data.loc[:, output_fields])
     # test_data.loc[:, output_fields] = output_scaler.transform(test_data.loc[:, output_fields])
@@ -133,7 +131,4 @@ def transform(df, train_percentage=0.7, count=-1):
     # access trial of specific inputs with df.loc['INPUT_VALUES', :]
     return (X_train, X_test, y_train, y_test, train_trial_names, test_trial_names, output_scaler, start_states, max_duration)
 
-def inverse_transform(predictions, target, start_times):
-    # undo what transform function did, converting numpy array to pandas DF
-    df = pd.DataFrame(predictions)
 
