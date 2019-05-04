@@ -68,20 +68,20 @@ if __name__ == '__main__':
     model.add(Dense(J))
     model.compile(loss='mean_squared_error', optimizer='adam')
 
-    epochs = 300
+    iterations = 10
+    epochs = 30
     period = 10
     # learning curver
     train_loss_history = []
     test_loss_history = []
-    for i in range(epochs):
-        for j in range(len(X_train)):
-            model.fit(twoD2threeD(X_train[j]), twoD2threeD(y_train[j]), epochs=1,
-                    batch_size=batch_size, verbose=0, shuffle=False)
+   
+    pdb.set_trace()
+    # plot learning curve
+    for it in range(iterations):
+        model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0, shuffle=False)
     
-        if i % period == 0:
-            # plot learning curve
-            train_loss_history.append(calc_error(model, X_train, y_train, output_scaler))
-            test_loss_history.append(calc_error(model, X_test, y_test, output_scaler))
+        train_loss_history.append(calc_error(model, X_train, y_train, output_scaler))
+        test_loss_history.append(calc_error(model, X_test, y_test, output_scaler))
 
      # examine results
     train_predictions = np.array([np.squeeze(model.predict(twoD2threeD(X_train[i]),
