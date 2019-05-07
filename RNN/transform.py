@@ -58,16 +58,14 @@ def transform(df, train_percentage=0.7, count=-1):
     df['left_pwm'] = df['left_pwm'].apply(truncate, args=(3,))
     df['right_pwm'] = df['right_pwm'].apply(truncate, args=(3,))
     df['input'] = 'l_'+df['left_pwm'].map(str)+'_r_'+df['right_pwm'].map(str)
-    df = df.set_index(['input'])
     df = df.iloc[:count, :]
 
     # normalize inputs
     input_scaler = MinMaxScaler(feature_range=(0, 1))
     output_scaler = MinMaxScaler(feature_range=(0, 1))
     df.loc[:,input_fields] = input_scaler.fit_transform(df.loc[:,input_fields])
-    grouped = df.groupby(df.index)
+    grouped = df.groupby('input')
     num_trials = len(grouped)
-
     #for key, item in grouped:
     #    print(grouped.get_group(key), '\n\n')
 
@@ -87,20 +85,19 @@ def transform(df, train_percentage=0.7, count=-1):
         fig = plt.figure()
         ax1 = fig.add_subplot(111)
         visualize_3D([grouped.get_group(debug_trial).loc[:, output_fields].values], ax1, plt_arrow=True)
-    #pdb.set_trace()
     # remove the bias of starting points in each trial
     df.loc[:, output_fields] = grouped.apply(lambda x: remove_bias(x, start_states))
-    grouped = df.groupby(df.index)
+    grouped = df.groupby('input')
     # remove bias in theta
     df.loc[:, ['model_pos_x', 'model_pos_y']] = grouped.apply(
             lambda x: rotate(x.loc[:, ['model_pos_x', 'model_pos_y']], -start_states.loc[x.name].loc['theta']))
     if debug:
-        grouped = df.groupby(df.index)   
+        grouped = df.groupby('input')   
         visualize_3D([grouped.get_group(debug_trial).loc[:, output_fields].values], ax1, plt_arrow=True)
         plt.show()
 
     # create new data frame that is of (# of trials, max_duration dimenstion) 
-    df = df.groupby(['input']).apply(lambda x: transform_group(x, max_duration))
+    df = df.groupby('input').apply(lambda x: transform_group(x, max_duration))
 
     trial_names = df.index.levels[0]
     train_samples = np.random.choice(num_trials, n_train, replace=False)
