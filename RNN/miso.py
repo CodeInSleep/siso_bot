@@ -1,30 +1,27 @@
 import os
 import sys
 import math
+from itertools import product
+import pdb
+
 import numpy as np
 import pandas as pd
 import matplotlib
 import matplotlib.pyplot as plt
-from itertools import product
 from mpl_toolkits.mplot3d import Axes3D
-
-from pandas import Series
 from keras.models import Sequential
 from keras.layers import Dense, Dropout, Reshape
 from keras.layers import Embedding
 from keras.layers import LSTM, SimpleRNN, Dropout
+from keras.initializers import Identity, RandomNormal
 from keras.utils import plot_model
-from keras.initializers import Identity
+from keras.utils.vis_utils import model_to_dot
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error
+
 from visualize import visualize_3D
-
-import pdb
-
-from IPython.display import SVG
-from keras.utils.vis_utils import model_to_dot
 from transform import transform, input_fields, output_fields, others
-from keras.utils import plot_model
+
 
 os.environ["SISO_DATA_DIR"] = '/Users/li-wei/siso_bot/RNN/data/'
 fname = 'trial_3_to_6.csv'
@@ -47,8 +44,8 @@ def twoD2threeD(np_array):
 def calc_error(model, X, y, output_scaler):
     # X, y are 3D
     rmse = 0
-    predictions = np.array([np.squeeze(model.predict(twoD2threeD(X[i]),
-        batch_size=batch_size), axis=0) for i in range(len(X))])
+    predictions = np.array([np.squeeze(model.predict(twoD2threeD(X[i])),
+        axis=0) for i in range(len(X))])
 
     for i in range(len(predictions)):
         rmse += np.sqrt(mean_squared_error(y[i], predictions[i]))
@@ -68,11 +65,14 @@ if __name__ == '__main__':
     X_train, X_test, y_train, y_test, train_trial_names, test_trial_names, \
         output_scaler, start_states, max_duration = transform(df)
 
+    layers_dims = [p, 10, J, J]
     batch_size = 1
     model = Sequential()
     model.add(Dense(p, batch_input_shape=(batch_size, max_duration, p), name='input_layer'))
-    model.add(Dense(10, batch_input_shape=(batch_size, max_duration,), name='second_layer'))
-    model.add(Dropout(0.8))
+    model.add(Dense(10, batch_input_shape=(batch_size, max_duration,), activation='tanh', kernel_initializer=RandomNormal(stddev=np.sqrt(2./layers_dims[0])), name='second_layer'))
+    model.add(Dropout(0.7))
+    #model.add(Dense(10, batch_input_shape=(batch_size, max_duration,), activation='tanh', kernel_initializer=RandomNormal(stddev=np.sqrt(2./layers_dims[1])), name='third_layer'))
+    #model.add(Dropout(0.7))
     model.add(Dense(J, batch_input_shape=(batch_size, max_duration,),
         activation='tanh', name='hidden_layer'))
     model.add(LSTM(J, batch_input_shape=(batch_size, max_duration, J), name='dynamic_layer',
@@ -95,8 +95,13 @@ if __name__ == '__main__':
     plot_l = 2
     plot_w = 2
     # plot learning curve
-    fig, axes = plt.subplots(plot_l, plot_w)
-    fig.show()
+    train_fig, train_axes = plt.subplots(plot_l, plot_w)
+    test_fig, test_axes = plt.subplots(plot_l, plot_w)
+    
+    train_fig.title = 'train trials'
+    test_fig.title = 'test trials'
+    train_fig.show()
+    test_fig.show()
     for it in range(iterations):
         model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0, shuffle=False)
 
@@ -104,13 +109,17 @@ if __name__ == '__main__':
         test_loss_history.append(calc_error(model, X_test, y_test, output_scaler)) 
 
         for idx, (x, y) in enumerate(product(range(plot_l), range(plot_w))):
-            axes[x, y].clear()
+            train_axes[x, y].clear()
+            test_axes[x, y].clear()
        
         for idx, (x, y) in enumerate(product(range(plot_l), range(plot_w))):
-            test_predictions = model.predict(twoD2threeD(_X_test[plot_l*x+y]), batch_size=batch_size)
+            train_predictions = model.predict(twoD2threeD(_X_train[plot_l*x+y])) 
+            test_predictions = model.predict(twoD2threeD(_X_test[plot_l*x+y]))
+            visualize_3D(twoD2threeD(_y_train[plot_l*x+y]), train_axes[x, y])
+            visualize_3D(train_predictions, train_axes[x, y])
 
-            visualize_3D(twoD2threeD(_y_test[plot_l*x+y]), axes[x, y])
-            visualize_3D(test_predictions, axes[x, y])
+            visualize_3D(twoD2threeD(_y_test[plot_l*x+y]), test_axes[x, y])
+            visualize_3D(test_predictions, test_axes[x, y])
         plt.draw()
         plt.pause(5)
 
