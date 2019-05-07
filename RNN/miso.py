@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import matplotlib
 import matplotlib.pyplot as plt
+from itertools import product
 from mpl_toolkits.mplot3d import Axes3D
 
 from pandas import Series
@@ -39,6 +40,8 @@ def shape_it(X):
     return np.expand_dims(X.reshape((-1,1)),2)
 
 def twoD2threeD(np_array):
+    if len(np_array.shape) != 2:
+        raise AssertionError('np_array must be 2 dimension')
     return np_array.reshape(1, np_array.shape[0], np_array.shape[1])
 
 def calc_error(model, X, y, output_scaler):
@@ -60,7 +63,7 @@ if __name__ == '__main__':
     dirpath = os.environ['SISO_DATA_DIR']
     datafile = os.path.join(dirpath, fname)
     df = pd.read_csv(datafile, engine='python')
-    df = df.loc[input_fields+output_fields+others]
+    df = df[input_fields+output_fields+others]
 
     X_train, X_test, y_train, y_test, train_trial_names, test_trial_names, \
         output_scaler, start_states, max_duration = transform(df)
@@ -77,7 +80,7 @@ if __name__ == '__main__':
     model.add(Dense(J))
     model.compile(loss='mean_squared_error', optimizer='adam')
 
-    iterations = 30
+    iterations = 100
     epochs = 30
     period = 10
     # learning curver
@@ -85,16 +88,14 @@ if __name__ == '__main__':
     test_loss_history = []
    
     # for debug purposes
-    _X_train = X_train[0]
-    _y_train = y_train[0]
-    _X_test = X_test[0]
-    _y_test = y_test[0]
+    _X_train = X_train[:4]
+    _y_train = y_train[:4]
+    _X_test = X_test[:4]
+    _y_test = y_test[:4]
+    plot_l = 2
+    plot_w = 2
     # plot learning curve
-    fig = plt.figure()
-    ax1 = fig.add_subplot(121)
-    ax1.title = 'test trial'
-    ax2 = fig.add_subplot(122)
-    ax1.title = 'predictions'
+    fig, axes = plt.subplots(plot_l, plot_w)
     fig.show()
     for it in range(iterations):
         model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0, shuffle=False)
@@ -102,14 +103,16 @@ if __name__ == '__main__':
         train_loss_history.append(calc_error(model, X_train, y_train, output_scaler))
         test_loss_history.append(calc_error(model, X_test, y_test, output_scaler)) 
 
-        ax1.clear()
-        ax2.clear()
-        test_predictions = model.predict(twoD2threeD(_X_test), batch_size=batch_size)
-        visualize_3D(twoD2threeD(_y_test), ax1)
-        visualize_3D(test_predictions, ax2)
+        for idx, (x, y) in enumerate(product(range(plot_l), range(plot_w))):
+            axes[x, y].clear()
+       
+        for idx, (x, y) in enumerate(product(range(plot_l), range(plot_w))):
+            test_predictions = model.predict(twoD2threeD(_X_test[plot_l*x+y]), batch_size=batch_size)
+
+            visualize_3D(twoD2threeD(_y_test[plot_l*x+y]), axes[x, y])
+            visualize_3D(test_predictions, axes[x, y])
         plt.draw()
         plt.pause(5)
->>>>>>> overfit
 
      # examine results
     train_predictions = model.predict(X_train, batch_size=batch_size)
