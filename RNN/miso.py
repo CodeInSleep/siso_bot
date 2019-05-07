@@ -11,11 +11,12 @@ from pandas import Series
 from keras.models import Sequential
 from keras.layers import Dense, Dropout, Reshape
 from keras.layers import Embedding
-from keras.layers import LSTM, SimpleRNN
+from keras.layers import LSTM, SimpleRNN, Dropout
 from keras.utils import plot_model
 from keras.initializers import Identity
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error
+from visualize import visualize_3D
 
 import pdb
 
@@ -23,13 +24,19 @@ from IPython.display import SVG
 from keras.utils.vis_utils import model_to_dot
 from transform import transform, input_fields, output_fields, others
 from keras.utils import plot_model
-#TODO:
-#  - implement cross validation to plot learning curve
-def shape_it(X):
-    return np.expand_dims(X.reshape((-1,1)),2)
 
 os.environ["SISO_DATA_DIR"] = '/Users/li-wei/siso_bot/RNN/data/'
-fname = 'data2.csv'
+fname = 'trial_3_to_6.csv'
+#fname = 'trial_0_to_3dot5_step_0dot1.csv'
+
+# TODOs
+#   Hyperparmaters:
+#       - dropout keep_prob
+#       - parameter initialization
+#       - Gradient clipping
+
+def shape_it(X):
+    return np.expand_dims(X.reshape((-1,1)),2)
 
 def twoD2threeD(np_array):
     return np_array.reshape(1, np_array.shape[0], np_array.shape[1])
@@ -41,7 +48,6 @@ def calc_error(model, X, y, output_scaler):
         batch_size=batch_size), axis=0) for i in range(len(X))])
 
     for i in range(len(predictions)):
-        # rmse += np.sqrt(mean_squared_error(y[i], output_scaler.inverse_transform(predictions[i])))
         rmse += np.sqrt(mean_squared_error(y[i], predictions[i]))
     return rmse/y.size
 
@@ -62,11 +68,13 @@ if __name__ == '__main__':
     batch_size = 1
     model = Sequential()
     model.add(Dense(p, batch_input_shape=(batch_size, max_duration, p), name='input_layer'))
+    model.add(Dense(10, batch_input_shape=(batch_size, max_duration,), name='second_layer'))
+    model.add(Dropout(0.8))
     model.add(Dense(J, batch_input_shape=(batch_size, max_duration,),
         activation='tanh', name='hidden_layer'))
-    model.add(SimpleRNN(J, batch_input_shape=(batch_size, max_duration, J), name='dynamic_layer',
+    model.add(LSTM(J, batch_input_shape=(batch_size, max_duration, J), name='dynamic_layer',
         return_sequences=True, activation='tanh'))
-    model.add(Dense(1))
+    model.add(Dense(J))
     model.compile(loss='mean_squared_error', optimizer='adam')
 
     iterations = 30
@@ -78,20 +86,33 @@ if __name__ == '__main__':
    
     # for debug purposes
     _X_train = X_train[0]
-    _y_train = y_train[0][:,:1]
+    _y_train = y_train[0]
     _X_test = X_test[0]
-    _y_test = y_test[0][:,:1]
+    _y_test = y_test[0]
     # plot learning curve
+    fig = plt.figure()
+    ax1 = fig.add_subplot(121)
+    ax1.title = 'test trial'
+    ax2 = fig.add_subplot(122)
+    ax1.title = 'predictions'
+    fig.show()
     for it in range(iterations):
-        model.fit(twoD2threeD(_X_train), twoD2threeD(_y_train), epochs=epochs, batch_size=batch_size, verbose=0, shuffle=False)
+        model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0, shuffle=False)
 
-        train_loss_history.append(calc_error(model, twoD2threeD(_X_train), twoD2threeD(_y_train), output_scaler))
-        test_loss_history.append(calc_error(model, twoD2threeD(_X_test), twoD2threeD(_y_test), output_scaler))
+        train_loss_history.append(calc_error(model, X_train, y_train, output_scaler))
+        test_loss_history.append(calc_error(model, X_test, y_test, output_scaler)) 
+
+        ax1.clear()
+        ax2.clear()
+        test_predictions = model.predict(twoD2threeD(_X_test), batch_size=batch_size)
+        visualize_3D(twoD2threeD(_y_test), ax1)
+        visualize_3D(test_predictions, ax2)
+        plt.draw()
+        plt.pause(5)
 
      # examine results
-    train_predictions = np.array([np.squeeze(model.predict(twoD2threeD(_X_train),batch_size=batch_size), axis=0)])
-    
-    test_predictions = np.array([np.squeeze(model.predict(twoD2threeD(_X_test), batch_size=batch_size), axis=0)])
+    train_predictions = model.predict(X_train, batch_size=batch_size)
+    test_predictions = model.predict(X_test, batch_size=batch_size)
    
     #def unnorm_and_undiff(arr_3D, scaler, trial_names, init_conditions):
     #    arr_3D_unnorm = np.zeros(arr_3D.shape)

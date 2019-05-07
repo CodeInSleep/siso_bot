@@ -34,6 +34,7 @@ if __name__ == '__main__':
     ax1 = fig.add_subplot(121)
     ax2 = fig.add_subplot(122)
 
+    pdb.set_trace()
     #visualize_3D(train_pred, ax1)
     #visualize_3D(train_ground, ax2)
     ax1.plot(train_pred.flatten())
