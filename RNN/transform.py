@@ -32,7 +32,13 @@ def rotate(xy_df, rad):
     rotation = np.array([[math.cos(rad), -math.sin(rad)], [math.sin(rad), math.cos(rad)]])
     return pd.DataFrame(np.matmul(rotation, xy_df.T).T)
 
+def remove_bias(df, start_states):
+    return df.loc[:, output_fields] - start_states.loc[df.name, output_fields]
+
 def transform_group(group_df, max_duration):
+    """
+        transform each group so that each trial have length of max_duration
+    """
     group_df = group_df.reset_index().drop('input', axis=1)
     cols = group_df.columns
   
@@ -74,16 +80,16 @@ def transform(df, train_percentage=0.7, count=-1):
 
     # df.loc[:,'sim_time'] = grouped.apply(lambda x: x.loc[:, ['sim_time']].diff().cumsum().fillna(0))
 
-    debug = True
+    debug = False
     debug_trial = 'l_6.0_r_4.0'
 
     if debug:
         fig = plt.figure()
         ax1 = fig.add_subplot(111)
         visualize_3D([grouped.get_group(debug_trial).loc[:, output_fields].values], ax1, plt_arrow=True)
+    #pdb.set_trace()
     # remove the bias of starting points in each trial
-    df.loc[:, output_fields] = grouped.apply(
-            lambda x: x.loc[:, output_fields] - start_states.loc[x.name].loc[output_fields])
+    df.loc[:, output_fields] = grouped.apply(lambda x: remove_bias(x, start_states))
     grouped = df.groupby(df.index)
     # remove bias in theta
     df.loc[:, ['model_pos_x', 'model_pos_y']] = grouped.apply(
