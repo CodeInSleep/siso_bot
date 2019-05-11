@@ -12,7 +12,7 @@ import pickle
 from mpl_toolkits.mplot3d import Axes3D
 from keras.models import Sequential
 from keras.layers import Dense, Dropout, Reshape
-from keras.layers import Embedding
+from keras.layers import TimeDistributed
 from keras.layers import LSTM, SimpleRNN, Dropout
 from keras.initializers import Identity, RandomNormal
 from keras.utils import plot_model
@@ -74,7 +74,6 @@ if __name__ == '__main__':
     X_test_fname = os.path.join(dirpath, 'X_test.npy')
     y_train_fname = os.path.join(dirpath, 'y_train.npy')
     y_test_fname = os.path.join(dirpath, 'y_test.npy')
-    pdb.set_trace()
     if os.path.isfile(X_train_fname):
         X_train = np.load(X_train_fname) 
         X_test = np.load(X_test_fname)
@@ -99,21 +98,26 @@ if __name__ == '__main__':
         save_obj(parameters, 'parameters')
 
     layers_dims = [p, 10, J, J]
+    # no limit on batch size
     batch_size = 16
+    max_duration = 1
+
     model = Sequential()
-    model.add(Dense(p, batch_input_shape=(None, max_duration, p), name='input_layer'))
-    model.add(Dense(10, batch_input_shape=(None, max_duration,), activation='tanh', kernel_initializer=RandomNormal(stddev=np.sqrt(2./layers_dims[0])), name='second_layer'))
+    model.add(Dense(p, batch_input_shape=(batch_size, max_duration, p), name='input_layer'))
+    model.add(Dense(10, batch_input_shape=(batch_size, max_duration,10),
+        activation='tanh', kernel_initializer=RandomNormal(stddev=np.sqrt(2./layers_dims[0])), name='second_layer'))
     model.add(Dropout(0.7))
     #model.add(Dense(10, batch_input_shape=(batch_size, max_duration,), activation='tanh', kernel_initializer=RandomNormal(stddev=np.sqrt(2./layers_dims[1])), name='third_layer'))
     #model.add(Dropout(0.7))
-    model.add(Dense(J, batch_input_shape=(None, max_duration,),
+    model.add(Dense(J, batch_input_shape=(batch_size, max_duration,J),
         activation='tanh', kernel_initializer=RandomNormal(stddev=np.sqrt(2./layers_dims[1])), name='hidden_layer'))
-    model.add(LSTM(J, batch_input_shape=(batch_size, max_duration, J), name='dynamic_layer',
-        return_sequences=True, activation='tanh'))
-    model.add(Dense(J))
+    model.add(LSTM(J, batch_input_shape=(batch_size, max_duration,J),
+        name='dynamic_layer', return_sequences=True, activation='tanh',
+        stateful=True))
+    model.add(Dense(J, batch_input_shape=(batch_size, max_duration,)))
     model.compile(loss='mean_squared_error', optimizer='adam')
 
-    iterations = 50
+    iterations = 100
     epochs = 10
     # learning curver
     train_loss_history = []
@@ -154,24 +158,32 @@ if __name__ == '__main__':
             visualize_3D(twoD2threeD(_y_test[plot_l*x+y]), test_axes[x, y])
             visualize_3D(test_predictions, test_axes[x, y])
     '''
-    _X_train = twoD2threeD(X_train[2])
-    _y_train = twoD2threeD(y_train[2])
-    _X_test = twoD2threeD(X_test[2])
-    _y_test = twoD2threeD(y_test[2])
+    _X_train = twoD2threeD(X_train[0])
+    _y_train = twoD2threeD(y_train[0])
+    _X_test = twoD2threeD(X_test[0])
+    _y_test = twoD2threeD(y_test[0])
     # plot learning curve
     fig = plt.figure()
     ax1 = fig.add_subplot(121)
     ax2 = fig.add_subplot(122)
     fig.show()
-    
-    for i in range(len(y_train)):
-        ax1.clear()
-        visualize_3D(twoD2threeD(y_train[i]), ax1) 
-        plt.draw()
-        plt.pause(5)
+   
+    batch_size = 16
     for it in range(iterations):
-        model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0, shuffle=False)
-        #pdb.set_trace()
+        # train for the trial length then reset
+
+        for i in range(epochs):
+            for X, y in zip(X_train, y_train):
+                X = X.reshape(X.shape[0], 1, p)
+                y = y.reshape(y.shape[0], 1, J)
+
+                pdb.set_trace()
+                pad_len = batch_size - (X.shape[0]%batch_size)
+                # fill X, y so that their batch sizes are dividable by batch_size
+                X = np.concatenate((X, np.zeros((pad_len, 1, p))), axis=0)
+                y = np.concatenate((y, np.zeros((pad_len, 1, J))), axis=0)
+                model.fit(X, y, batch_size=batch_size, verbose=0, shuffle=False)
+            model.reset_states()
         train_loss_history.append(calc_error(model, X_train, y_train))
         test_loss_history.append(calc_error(model, X_test, y_test))
         ax1.clear()
@@ -180,6 +192,7 @@ if __name__ == '__main__':
         visualize_3D(_y_test, ax1)
         visualize_3D(test_predictions, ax2)
         plt.draw()
+        plt.pause(5)
 
     # examine results
     #train_predictions = model.predict(X_train, batch_size=batch_size)

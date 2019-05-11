@@ -91,6 +91,8 @@ def transform(df, train_percentage=0.7, count=-1):
     # remove bias in theta
     df.loc[:, ['model_pos_x', 'model_pos_y']] = grouped.apply(
             lambda x: rotate(x.loc[:, ['model_pos_x', 'model_pos_y']], -start_states.loc[x.name].loc['theta']))
+
+
     if debug:
         grouped = df.groupby('input')   
         visualize_3D([grouped.get_group(debug_trial).loc[:, output_fields].values], ax1, plt_arrow=True)
@@ -124,10 +126,12 @@ def transform(df, train_percentage=0.7, count=-1):
     train_trial_names = train_data.index
     test_trial_names = test_data.index
 
-    X_train = train_data[input_fields].values.reshape(n_train, p, max_duration).transpose(0, 2, 1)
-    X_test = test_data[input_fields].values.reshape(num_trials-n_train, p, max_duration).transpose(0, 2, 1)
-    y_train = train_data[output_fields].values.reshape(n_train, J, max_duration).transpose(0, 2, 1)
-    y_test = test_data[output_fields].values.reshape(num_trials-n_train, J, max_duration).transpose(0, 2, 1)
+    pdb.set_trace()
+    X_train = train_data[input_fields].values.reshape(n_train, p, max_duration).transpose(2, 0, 1)
+    X_test = test_data[input_fields].values.reshape(num_trials-n_train, p, max_duration).transpose(2, 0, 1)
+    y_train = train_data[output_fields].values.reshape(n_train, J, max_duration).transpose(2, 0, 1)
+    y_test = test_data[output_fields].values.reshape(num_trials-n_train, J, max_duration).transpose(2, 0, 1)
+   
     
     # convert start states dataframe to regular dictionary
     start_states = start_states.to_dict(orient='index')
