@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import pickle
 from mpl_toolkits.mplot3d import Axes3D
 from keras.models import Sequential, model_from_json
-from keras.layers import Dense, Dropout, LSTM, SimpleRNN, Dropout
+from keras.layers import Dense, Dropout, LSTM, SimpleRNN, Dropout, GRU
 from keras.initializers import Identity, RandomNormal
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error
@@ -22,7 +22,7 @@ from visualize import visualize_3D
 from transform import transform, input_fields, output_fields, others
 
 os.environ["SISO_DATA_DIR"] = '/Users/li-wei/siso_bot/RNN/data/'
-fname = 'trial_3_to_6.csv'
+fname = 'trial_0_to_3dot5_step_0dot1.csv'
 
 # network parameter
 p = len(input_fields)
@@ -61,19 +61,19 @@ def convert_to_inference_model(original_model):
 
     inference_model = model_from_json(json.dumps(inference_model_dict))
     inference_model.set_weights(original_model.get_weights())
-
+    inference_model.reset_states()
     return inference_model
 
 def predict_seq(model, X, y):
     # X is the input sequence (without ground truth previous prediction)
-    prevState = np.zeros((1, J))
+    #prevState = np.zeros((1, J))
     predictions = []
     for i in range(len(X)):
+        prevState = y[i]
         state = twoD2threeD(np.concatenate((prevState.reshape(1, -1), X[i].reshape((1,-1))), axis=1))
         prediction = model.predict(state)
         predictions.append(prediction.ravel())
-        prevState = prediction
-    model.reset_states()
+        #prevState = prediction
     return np.array(predictions)
 
 def calc_error(model, X, y):
@@ -109,7 +109,7 @@ def make_model(model_params, weights=None):
     #model.add(Dense(10, batch_input_shape=(batch_size, max_duration,), activation='tanh', kernel_initializer=RandomNormal(stddev=np.sqrt(2./layers_dims[1])), name='third_layer'))
     #model.add(Dropout(0.7))
     model.add(Dense(J, activation='tanh', kernel_initializer=RandomNormal(stddev=np.sqrt(2./layers_dims[1])), name='hidden_layer'))
-    model.add(LSTM(J, name='dynamic_layer', return_sequences=True, activation='tanh', stateful=stateful))
+    model.add(GRU(J, name='dynamic_layer', return_sequences=True, activation='tanh', stateful=stateful))
     model.add(Dense(J))
     if weights:
         # override default weights
@@ -166,7 +166,7 @@ if __name__ == '__main__':
         }
 
     model = make_model(stateless_model_params)
-    iterations = 20
+    iterations = 50
     epochs = 10
     # learning curver
     train_loss_history = []
@@ -207,10 +207,11 @@ if __name__ == '__main__':
             visualize_3D(twoD2threeD(_y_test[plot_l*x+y]), test_axes[x, y])
             visualize_3D(test_predictions, test_axes[x, y])
     '''
-    _X_train = X_train[2,:,3:]
-    _y_train = output_scaler.inverse_transform(y_train[2])
-    _X_test = X_test[2, :, 3:]
-    _y_test = output_scaler.inverse_transform(y_test[2])
+    n = 40
+    _X_train = X_train[n,:,3:]
+    _y_train = output_scaler.inverse_transform(y_train[n])
+    _X_test = X_test[n, :, 3:]
+    _y_test = output_scaler.inverse_transform(y_test[n])
     # plot learning curve
     fig = plt.figure()
     ax1 = fig.add_subplot(121)
@@ -220,28 +221,27 @@ if __name__ == '__main__':
     for it in range(iterations):
         model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0, shuffle=False)
         # create a stateful model for prediction
-        stateful_model = convert_to_inference_model(model)      
+        stateful_model = convert_to_inference_model(model)
+        # predict on one trial at a time
+        train_predictions = predict_seq(stateful_model, _X_train, _y_train)
+        test_predictions = predict_seq(stateful_model, _X_test, _y_test)
+    
+        # unnormalize predictions for visualization and usage
+        train_predictions = output_scaler.inverse_transform(train_predictions)
+        test_predictions = output_scaler.inverse_transform(test_predictions) 
         
+
+        ax1.clear()
+        ax2.clear()
+        visualize_3D(twoD2threeD(_y_train), ax1, plt_arrow=True)
+        visualize_3D(twoD2threeD(train_predictions), ax2, plt_arrow=True)
+        plt.draw()
+        plt.pause(4)
+
         train_loss_history.append(calc_error(stateful_model, X_train[:,:,3:], y_train))
         test_loss_history.append(calc_error(stateful_model, X_test[:,:,3:], y_test))
         
-    # create a stateful model for prediction
-    stateful_model = convert_to_inference_model(model)
-    # predict on one trial at a time
-    train_predictions = predict_seq(stateful_model, _X_train, _y_train)
-    test_predictions = predict_seq(stateful_model, _X_test, _y_test)
-
-    # unnormalize predictions for visualization and usage
-    train_predictions = output_scaler.inverse_transform(train_predictions)
-    test_predictions = output_scaler.inverse_transform(test_predictions) 
-        
-    ax1.clear()
-    ax2.clear()
-    visualize_3D(twoD2threeD(_y_train), ax1, plt_arrow=True)
-    visualize_3D(twoD2threeD(train_predictions), ax2, plt_arrow=True)
-    plt.draw()
-    plt.pause(5)
-
+    
     # examine results
     #train_predictions = model.predict(X_train, batch_size=batch_size)
     #test_predictions = model.predict(X_test, batch_size=batch_size)
