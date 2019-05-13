@@ -3,6 +3,7 @@ import sys
 import math
 from itertools import product
 import pdb
+import json
 
 import numpy as np
 import pandas as pd
@@ -10,7 +11,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import pickle
 from mpl_toolkits.mplot3d import Axes3D
-from keras.models import Sequential
+from keras.models import Sequential, model_from_json
 from keras.layers import Dense, Dropout, LSTM, SimpleRNN, Dropout
 from keras.initializers import Identity, RandomNormal
 from sklearn.preprocessing import MinMaxScaler
@@ -44,6 +45,24 @@ def twoD2threeD(np_array):
     if len(np_array.shape) != 2:
         raise AssertionError('np_array must be 2 dimension')
     return np_array.reshape(1, np_array.shape[0], np_array.shape[1])
+
+def convert_to_inference_model(original_model):
+    original_model_json = original_model.to_json()
+    inference_model_dict = json.loads(original_model_json)
+
+    layers = inference_model_dict['config']['layers']
+    for layer in layers:
+        if 'stateful' in layer['config']:
+            layer['config']['stateful'] = True
+
+        if 'batch_input_shape' in layer['config']:
+            layer['config']['batch_input_shape'][0] = 1
+            layer['config']['batch_input_shape'][1] = None
+
+    inference_model = model_from_json(json.dumps(inference_model_dict))
+    inference_model.set_weights(original_model.get_weights())
+
+    return inference_model
 
 def predict_seq(model, X, y):
     # X is the input sequence (without ground truth previous prediction)
@@ -79,10 +98,10 @@ def make_model(model_params, weights=None):
         turn the stateless model used for training into a stateful one
         for one step prediction
     '''
-    time_step = model_params['time_step']
     batch_size = model_params['batch_size']
     stateful = model_params['stateful']
-
+    time_step = model_params['time_step']
+    
     model = Sequential()
     model.add(Dense(p+J, batch_input_shape=(batch_size, time_step, p+J), name='input_layer'))
     model.add(Dense(layers_dims[1], activation='tanh', kernel_initializer=RandomNormal(stddev=np.sqrt(2./layers_dims[0])), name='second_layer'))
@@ -142,11 +161,12 @@ if __name__ == '__main__':
     
     stateless_model_params = {
             'batch_size': batch_size,
+            'stateful': False,
             'time_step': max_duration,
-            'stateful': False
         }
+
     model = make_model(stateless_model_params)
-    iterations = 100
+    iterations = 20
     epochs = 10
     # learning curver
     train_loss_history = []
@@ -200,45 +220,38 @@ if __name__ == '__main__':
     for it in range(iterations):
         model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0, shuffle=False)
         # create a stateful model for prediction
-        stateful_model_params = {
-                'batch_size': 1,
-                'time_step': 1,
-                'stateful': True
-            }
-        stateful_model = make_model(stateful_model_params, weights=model.get_weights())
-        # predict on one trial at a time
-        train_predictions = predict_seq(stateful_model, _X_train, _y_train)
-        test_predictions = predict_seq(stateful_model, _X_test, _y_test)
-
-        # unnormalize predictions for visualization and usage
-        train_predictions = output_scaler.inverse_transform(train_predictions)
-        test_predictions = output_scaler.inverse_transform(test_predictions)
-       
+        stateful_model = convert_to_inference_model(model)      
+        
         train_loss_history.append(calc_error(stateful_model, X_train[:,:,3:], y_train))
         test_loss_history.append(calc_error(stateful_model, X_test[:,:,3:], y_test))
-        ax1.clear()
-        ax2.clear()
-        visualize_3D(twoD2threeD(_y_train), ax1)
-        visualize_3D(twoD2threeD(train_predictions), ax2)
-        plt.draw()
-        plt.pause(5)
+        
+    # create a stateful model for prediction
+    stateful_model = convert_to_inference_model(model)
+    # predict on one trial at a time
+    train_predictions = predict_seq(stateful_model, _X_train, _y_train)
+    test_predictions = predict_seq(stateful_model, _X_test, _y_test)
+
+    # unnormalize predictions for visualization and usage
+    train_predictions = output_scaler.inverse_transform(train_predictions)
+    test_predictions = output_scaler.inverse_transform(test_predictions) 
+        
+    ax1.clear()
+    ax2.clear()
+    visualize_3D(twoD2threeD(_y_train), ax1, plt_arrow=True)
+    visualize_3D(twoD2threeD(train_predictions), ax2, plt_arrow=True)
+    plt.draw()
+    plt.pause(5)
 
     # examine results
     #train_predictions = model.predict(X_train, batch_size=batch_size)
     #test_predictions = model.predict(X_test, batch_size=batch_size)
    
-    '''
-    train_predictions = unnorm_and_undiff(train_predictions, output_scaler,
-            train_trial_names, start_states)
-    test_predictions = unnorm_and_undiff(test_predictions, output_scaler,
-            test_trial_names, start_states)
-    train_gnd = unnorm_and_undiff(y_train, output_scaler, train_trial_names, start_states)
-    test_gnd = unnorm_and_undiff(y_test, output_scaler, train_trial_names, start_states)
-    np.save('train_predictions.npy', train_predictions) 
-    np.save('test_predictions.npy', test_predictions)
     
-    np.save('train_ground.npy', _y_train)
-    np.save('test_ground.npy', _y_test)
+    np.save(os.path.join(dirpath, 'train_predictions.npy'), train_predictions) 
+    np.save(os.path.join(dirpath, 'test_predictions.npy'), test_predictions)
+    
+    np.save(os.path.join(dirpath, 'train_ground.npy'), _y_train)
+    np.save(os.path.join(dirpath, 'test_ground.npy'), _y_test)
     plt.figure()
     plt.title('RMSE of train and test dataset')
     it_range = range(0, iterations)
@@ -246,4 +259,3 @@ if __name__ == '__main__':
     plt.plot(it_range, test_loss_history)
     plt.legend(['train', 'test'])
     plt.show()
-    '''
