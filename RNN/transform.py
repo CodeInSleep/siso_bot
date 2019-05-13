@@ -8,7 +8,10 @@ from visualize import visualize_3D
 
 input_fields = ['left_pwm', 'right_pwm']
 output_fields = ['model_pos_x', 'model_pos_y', 'theta']
+#output_fields = ['model_pos_x', 'model_pos_y']
 others = ['sim_time']
+p = len(input_fields)
+J = len(output_fields)
 
 np.random.seed(7)
 def truncate(num, digits):
@@ -51,6 +54,10 @@ def transform_group(group_df, max_duration):
     padded_group_df.columns = cols 
     padded_group_df = padded_group_df.fillna(0)
 
+    # add previous observation as feature for train data at current time step
+    for field in output_fields:
+        padded_group_df.loc[:, field+'(t-1)'] = padded_group_df.loc[:, field].shift(1).fillna(0)
+
     return padded_group_df
 
 def transform(df, train_percentage=0.7, count=-1):
@@ -91,6 +98,7 @@ def transform(df, train_percentage=0.7, count=-1):
     # remove bias in theta
     df.loc[:, ['model_pos_x', 'model_pos_y']] = grouped.apply(
             lambda x: rotate(x.loc[:, ['model_pos_x', 'model_pos_y']], -start_states.loc[x.name].loc['theta']))
+
     if debug:
         grouped = df.groupby('input')   
         visualize_3D([grouped.get_group(debug_trial).loc[:, output_fields].values], ax1, plt_arrow=True)
@@ -110,10 +118,15 @@ def transform(df, train_percentage=0.7, count=-1):
     train_data = df.loc[train_trial_names, :]
     test_data = df.loc[test_trial_names, :] 
     
-    # normalize the output differences
-    # train_data.loc[:, output_fields] = output_scaler.fit_transform(train_data.loc[:, output_fields])
-    # test_data.loc[:, output_fields] = output_scaler.transform(test_data.loc[:, output_fields])
+    prev_output_fields = [field+'(t-1)' for field in output_fields]
 
+    #pdb.set_trace()
+    #y_train = train_data.loc[:, output_fields]
+    # normalize the output differences
+    train_data.loc[:, output_fields] = output_scaler.fit_transform(train_data.loc[:, output_fields])
+    train_data.loc[:, prev_output_fields] = output_scaler.transform(train_data.loc[:, prev_output_fields])
+    test_data.loc[:, output_fields] = output_scaler.transform(test_data.loc[:, output_fields])
+    test_data.loc[:, prev_output_fields] = output_scaler.transform(test_data.loc[:, prev_output_fields])
     # unstack time series to columns
     train_data = train_data.unstack(level=1)
     test_data = test_data.unstack(level=1)
@@ -123,9 +136,9 @@ def transform(df, train_percentage=0.7, count=-1):
 
     train_trial_names = train_data.index
     test_trial_names = test_data.index
-
-    X_train = train_data[input_fields].values.reshape(n_train, p, max_duration).transpose(0, 2, 1)
-    X_test = test_data[input_fields].values.reshape(num_trials-n_train, p, max_duration).transpose(0, 2, 1)
+    
+    X_train = train_data[prev_output_fields+input_fields].values.reshape(n_train, p+J, max_duration).transpose(0, 2, 1)
+    X_test = test_data[prev_output_fields+input_fields].values.reshape(num_trials-n_train, p+J, max_duration).transpose(0, 2, 1)
     y_train = train_data[output_fields].values.reshape(n_train, J, max_duration).transpose(0, 2, 1)
     y_test = test_data[output_fields].values.reshape(num_trials-n_train, J, max_duration).transpose(0, 2, 1)
     
