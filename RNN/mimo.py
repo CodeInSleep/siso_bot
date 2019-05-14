@@ -22,7 +22,7 @@ from sklearn.externals import joblib
 from visualize import visualize_3D
 from transform import transform, input_fields, output_fields, others
 
-fname = 'trial_0_to_3dot5_step_0dot1.csv'
+fname = 'trial_3_to_6.csv'
 
 # network parameter
 p = len(input_fields)
@@ -64,7 +64,7 @@ def convert_to_inference_model(original_model):
     inference_model.reset_states()
     return inference_model
 
-def predict_seq(model, X, y):
+def predict_seq(model, X, output_scaler):
     # X is the input sequence (without ground truth previous prediction)
     #prevState = np.zeros((1, J))
     predictions = []
@@ -73,14 +73,16 @@ def predict_seq(model, X, y):
         prediction = model.predict(state)
         predictions.append(prediction.ravel())
         #prevState = prediction
-    return np.array(predictions)
+    return output_scaler.inverse_transform(np.array(predictions))
 
-def calc_error(model, X, y):
-    # X, y are 3D
+def calc_error(model, X, y, output_scaler):
+    # X, y are unnormalized 3D
     rmse = 0
 
     for i in range(len(X)):
-        predictions = predict_seq(model, X[i], y[i])
+        predictions = predict_seq(model, X[i], output_scaler)
+        unnorm_y = output_scaler.inverse_transform(y[i])
+
         rmse += np.sqrt(mean_squared_error(y[i], predictions))
     return rmse/y.size
 
@@ -104,7 +106,7 @@ def make_model(model_params, weights=None):
     model = Sequential()
     model.add(Dense(p, batch_input_shape=(batch_size, time_step, p), name='input_layer'))
     model.add(Dense(layers_dims[1], activation='tanh', kernel_initializer=RandomNormal(stddev=np.sqrt(2./layers_dims[0])), name='second_layer'))
-    model.add(Dropout(0.7))
+    model.add(Dropout(0.2))
     #model.add(Dense(10, batch_input_shape=(batch_size, max_duration,), activation='tanh', kernel_initializer=RandomNormal(stddev=np.sqrt(2./layers_dims[1])), name='third_layer'))
     #model.add(Dropout(0.7))
     model.add(Dense(J, activation='tanh', kernel_initializer=RandomNormal(stddev=np.sqrt(2./layers_dims[1])), name='hidden_layer'))
@@ -212,11 +214,13 @@ if __name__ == '__main__':
             visualize_3D(twoD2threeD(_y_test[plot_l*x+y]), test_axes[x, y])
             visualize_3D(test_predictions, test_axes[x, y])
     '''
-    n = 40
+
+    # for debug purposes
+    n = 0
     _X_train = X_train[n]
-    _y_train = y_train[n]
+    _y_train = output_scaler.inverse_transform(y_train[n])
     _X_test = X_test[n]
-    _y_test = y_test[n]
+    _y_test = output_scaler.inverse_transform(y_test[n])
     # plot learning curve
     fig = plt.figure()
     ax1 = fig.add_subplot(121)
@@ -224,27 +228,23 @@ if __name__ == '__main__':
     fig.show()
     
     for it in range(iterations):
+        print('iteration %d' % it) 
         model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0, shuffle=False)
         # create a stateful model for prediction
         stateful_model = convert_to_inference_model(model)
         # predict on one trial at a time
-        train_predictions = predict_seq(stateful_model, _X_train, _y_train)
-        test_predictions = predict_seq(stateful_model, _X_test, _y_test)
+        train_predictions = predict_seq(stateful_model, _X_train, output_scaler)
+        test_predictions = predict_seq(stateful_model, _X_test, output_scaler)
     
-        # unnormalize predictions for visualization and usage
-        # train_predictions = output_scaler.inverse_transform(train_predictions)
-        # test_predictions = output_scaler.inverse_transform(test_predictions) 
-
         ax1.clear()
         ax2.clear()
-        visualize_3D(twoD2threeD(_y_train), ax1, plt_arrow=True)
-        
+        visualize_3D(twoD2threeD(_y_train), ax1, plt_arrow=True) 
         visualize_3D(twoD2threeD(train_predictions), ax2, plt_arrow=True)
         plt.draw()
         plt.pause(4)
 
-        train_loss_history.append(calc_error(stateful_model, X_train, y_train))
-        test_loss_history.append(calc_error(stateful_model, X_test, y_test))
+        train_loss_history.append(calc_error(stateful_model, X_train, y_train, output_scaler))
+        test_loss_history.append(calc_error(stateful_model, X_test, y_test, output_scaler))
         
     
     # examine results

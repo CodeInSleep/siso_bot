@@ -123,9 +123,9 @@ def transform(df, train_percentage=0.7, count=-1):
     #pdb.set_trace()
     #y_train = train_data.loc[:, output_fields]
     # normalize the output differences
-    # train_data.loc[:, output_fields] = output_scaler.fit_transform(train_data.loc[:, output_fields])
+    train_data.loc[:, output_fields] = output_scaler.fit_transform(train_data.loc[:, output_fields])
     # train_data.loc[:, prev_output_fields] = output_scaler.transform(train_data.loc[:, prev_output_fields])
-    # test_data.loc[:, output_fields] = output_scaler.transform(test_data.loc[:, output_fields])
+    test_data.loc[:, output_fields] = output_scaler.transform(test_data.loc[:, output_fields])
     # test_data.loc[:, prev_output_fields] = output_scaler.transform(test_data.loc[:, prev_output_fields])
     # unstack time series to columns
     train_data = train_data.unstack(level=1)
