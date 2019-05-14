@@ -11,10 +11,12 @@ import pandas as pd
 import matplotlib
 import matplotlib.pyplot as plt
 import pickle
+from numpy import arctan2
 from mpl_toolkits.mplot3d import Axes3D
 from keras.models import Sequential, model_from_json
 from keras.layers import Dense, Dropout, LSTM, SimpleRNN, Dropout, GRU
 from keras.initializers import Identity, RandomNormal
+from keras.optimizers import Adam
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error
 from sklearn.externals import joblib
@@ -22,7 +24,7 @@ from sklearn.externals import joblib
 from visualize import visualize_3D
 from transform import transform, input_fields, output_fields, others
 
-fname = 'trial_3_to_6.csv'
+fname = 'trial_1000.csv'
 
 # network parameter
 p = len(input_fields)
@@ -94,6 +96,9 @@ def load_obj(name):
     with open(os.path.join(dirpath, name + '.pkl'), 'rb') as f:
         return pickle.load(f)
 
+def trim_to_batch_mult(arr, batch_size):
+    return arr[:-(len(arr)%batch_size), :, :]
+
 def make_model(model_params, weights=None):
     '''
         turn the stateless model used for training into a stateful one
@@ -115,6 +120,7 @@ def make_model(model_params, weights=None):
     if weights:
         # override default weights
         model.set_weights(weights)
+    optimizer = Adam(lr=1e-5)
     model.compile(loss='mean_squared_error', optimizer='adam')
 
     return model
@@ -132,48 +138,42 @@ if __name__ == '__main__':
     print('dirpath: ', dirpath)
     datafile = os.path.join(dirpath, fname)
     df = pd.read_csv(datafile, engine='python')
-    df = df[input_fields+output_fields+others]
 
     X_train_fname = os.path.join(dirpath, 'X_train.npy')
     X_test_fname = os.path.join(dirpath, 'X_test.npy')
     y_train_fname = os.path.join(dirpath, 'y_train.npy')
     y_test_fname = os.path.join(dirpath, 'y_test.npy')
-    scaler_fname = os.path.join(dirpath, 'scaler.pkl')
+    input_scaler_fname = os.path.join(dirpath, 'input_scaler.pkl')
     if os.path.isfile(X_train_fname):
-        X_train = np.load(os.path.join(dirpath, 'X_train.npy')) 
-        X_test = np.load(os.path.join(dirpath, 'X_test.npy'))
-        y_train = np.load(os.path.join(dirpath, 'y_train.npy'))
-        y_test = np.load(os.path.join(dirpath, 'y_test.npy'))
-        parameters = load_obj('parameters')
-        train_trial_names = parameters['train_trial_names']
-        test_trial_names = parameters['test_trial_names']
-        max_duration= parameters['max_duration']
-        output_scaler = joblib.load(scaler_fname)
+        X_train = np.load(os.path.join(dirpath, 'X_train.npy'), allow_pickle=True) 
+        X_test = np.load(os.path.join(dirpath, 'X_test.npy'), allow_pickle=True)
+        y_train = np.load(os.path.join(dirpath, 'y_train.npy'), allow_pickle=True)
+        y_test = np.load(os.path.join(dirpath, 'y_test.npy'), allow_pickle=True)
+        input_scaler = joblib.load(input_scaler_fname)
     else:
-        X_train, X_test, y_train, y_test, train_trial_names, test_trial_names, \
-        output_scaler, start_states, max_duration = transform(df, count=-1)
+        X_train, X_test, y_train, y_test, input_scaler, output_scaler = transform(df, count=-1)
 
         np.save(X_train_fname, X_train)
         np.save(X_test_fname, X_test)
         np.save(y_train_fname, y_train)
         np.save(y_test_fname, y_test)
-        parameters = {}
-        parameters['train_trial_names'] = train_trial_names.tolist()
-        parameters['test_trial_names'] = test_trial_names.tolist()
-        parameters['max_duration'] = max_duration
-        save_obj(parameters, 'parameters')
-        joblib.dump(output_scaler, scaler_fname)
+        joblib.dump(input_scaler, input_scaler_fname)
 
-    batch_size = None
-    
+    batch_size = 32
+    timestep = 5
+    X_train = trim_to_batch_mult(X_train, batch_size)
+    X_test = trim_to_batch_mult(X_test, batch_size)
+    y_train = trim_to_batch_mult(y_train, batch_size)
+    y_test = trim_to_batch_mult(y_test, batch_size)
+
     stateless_model_params = {
             'batch_size': batch_size,
             'stateful': False,
-            'time_step': max_duration,
+            'time_step': timestep,
         }
 
     model = make_model(stateless_model_params)
-    iterations = 50
+    iterations = 20
     epochs = 10
     # learning curver
     train_loss_history = []
@@ -213,7 +213,7 @@ if __name__ == '__main__':
 
             visualize_3D(twoD2threeD(_y_test[plot_l*x+y]), test_axes[x, y])
             visualize_3D(test_predictions, test_axes[x, y])
-    '''
+    
 
     # for debug purposes
     n = 0
@@ -226,10 +226,12 @@ if __name__ == '__main__':
     ax1 = fig.add_subplot(121)
     ax2 = fig.add_subplot(122)
     fig.show()
-    
+    '''
+
     for it in range(iterations):
         print('iteration %d' % it) 
         model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0, shuffle=False)
+        '''
         # create a stateful model for prediction
         stateful_model = convert_to_inference_model(model)
         # predict on one trial at a time
@@ -242,21 +244,26 @@ if __name__ == '__main__':
         visualize_3D(twoD2threeD(train_predictions), ax2, plt_arrow=True)
         plt.draw()
         plt.pause(4)
-
+        
         train_loss_history.append(calc_error(stateful_model, X_train, y_train, output_scaler))
         test_loss_history.append(calc_error(stateful_model, X_test, y_test, output_scaler))
+        '''
         
+        train_predictions = model.predict(X_train)
+        test_predictions = model.predict(X_test)
+        train_cost = np.mean((train_predictions-y_train)**2)
+        test_cost = np.mean((test_predictions-y_test)**2)
+        train_loss_history.append(train_cost)
+        test_loss_history.append(test_cost)
+
+        print('train_cost: %f' % train_cost)
+        print('test_cost: %f' % test_cost)
     
     # examine results
     #train_predictions = model.predict(X_train, batch_size=batch_size)
     #test_predictions = model.predict(X_test, batch_size=batch_size)
    
     
-    np.save(os.path.join(dirpath, 'train_predictions.npy'), train_predictions) 
-    np.save(os.path.join(dirpath, 'test_predictions.npy'), test_predictions)
-    
-    np.save(os.path.join(dirpath, 'train_ground.npy'), _y_train)
-    np.save(os.path.join(dirpath, 'test_ground.npy'), _y_test)
     plt.figure()
     plt.title('RMSE of train and test dataset')
     it_range = range(0, iterations)

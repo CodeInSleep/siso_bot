@@ -3,11 +3,12 @@ import pandas as pd
 import numpy as np
 import pdb
 import matplotlib.pyplot as plt
+from numpy import cos, sin, arctan2
 from sklearn.preprocessing import MinMaxScaler
 from visualize import visualize_3D
 
 input_fields = ['left_pwm', 'right_pwm']
-output_fields = ['model_pos_x', 'model_pos_y', 'theta']
+output_fields = ['model_pos_x', 'model_pos_y', 'theta_cos', 'theta_sin']
 #output_fields = ['model_pos_x', 'model_pos_y']
 others = ['sim_time']
 p = len(input_fields)
@@ -61,90 +62,49 @@ def transform_group(group_df, max_duration):
     return padded_group_df
 
 def transform(df, train_percentage=0.7, count=-1):
-    df['theta'] = df['theta'].apply(lambda x: math.radians(x))
-    df['left_pwm'] = df['left_pwm'].apply(truncate, args=(3,))
-    df['right_pwm'] = df['right_pwm'].apply(truncate, args=(3,))
-    df['input'] = 'l_'+df['left_pwm'].map(str)+'_r_'+df['right_pwm'].map(str)
+    timestep = 5
+    df.loc[:, 'theta'] = df.loc[:, 'theta'].apply(lambda x: math.radians(x))
+    df.loc[:, 'theta_cos'] = df.loc[:, 'theta'].apply(lambda x: cos(x))
+    df.loc[:, 'theta_sin'] = df.loc[:, 'theta'].apply(lambda x: sin(x))
+    df.loc[:, 'left_pwm'] = df.loc[:, 'left_pwm'].apply(truncate, args=(3,))
+    df.loc[:, 'right_pwm'] = df.loc[:, 'right_pwm'].apply(truncate, args=(3,))
+    df.loc[:, 'input'] = 'l_'+df.loc[:, 'left_pwm'].map(str)+'_r_'+df.loc[:, 'right_pwm'].map(str)
     df = df.iloc[:count, :]
 
     # normalize inputs
     input_scaler = MinMaxScaler(feature_range=(0, 1))
-    output_scaler = MinMaxScaler(feature_range=(0, 1))
     df.loc[:,input_fields] = input_scaler.fit_transform(df.loc[:,input_fields])
-    grouped = df.groupby('input')
-    num_trials = len(grouped)
-    #for key, item in grouped:
-    #    print(grouped.get_group(key), '\n\n')
+    # provide a summary of inputs
+    input_summary = df.groupby('input').apply(lambda x: x.describe())
 
-    # store max duration of a trial
-    max_duration = max(grouped['sim_time'].count())
-    n_train = int(num_trials*train_percentage)
-
-    # the start time of every trial, used later to recover trajectories
-    start_states = grouped.first()
-
-    # df.loc[:,'sim_time'] = grouped.apply(lambda x: x.loc[:, ['sim_time']].diff().cumsum().fillna(0))
-
-    debug = False
-    debug_trial = 'l_6.0_r_4.0'
-
-    if debug:
-        fig = plt.figure()
-        ax1 = fig.add_subplot(111)
-        visualize_3D([grouped.get_group(debug_trial).loc[:, output_fields].values], ax1, plt_arrow=True)
-    # remove the bias of starting points in each trial
-    df.loc[:, output_fields] = grouped.apply(lambda x: remove_bias(x, start_states))
-    grouped = df.groupby('input')
-    # remove bias in theta
-    df.loc[:, ['model_pos_x', 'model_pos_y']] = grouped.apply(
-            lambda x: rotate(x.loc[:, ['model_pos_x', 'model_pos_y']], -start_states.loc[x.name].loc['theta']))
-
-    if debug:
-        grouped = df.groupby('input')   
-        visualize_3D([grouped.get_group(debug_trial).loc[:, output_fields].values], ax1, plt_arrow=True)
-        plt.show()
-
-    # create new data frame that is of (# of trials, max_duration dimenstion) 
-    df = df.groupby('input').apply(lambda x: transform_group(x, max_duration))
-
-    trial_names = df.index.levels[0]
-    train_samples = np.random.choice(num_trials, n_train, replace=False)
-    train_trial_names = [trial_names[i] for i in train_samples]
-    test_samples = np.array([i for i in range(num_trials) if i not in train_samples])
-    test_trial_names = [trial_names[i] for i in test_samples]
-
-    print('train trial names: ', train_trial_names)
-    print('test trial names: ', test_trial_names)
-    train_data = df.loc[train_trial_names, :]
-    test_data = df.loc[test_trial_names, :] 
+    # time difference on the output fields
+    df.loc[:, output_fields] = df.loc[:, output_fields].diff().fillna(0)
     
-    # prev_output_fields = [field+'(t-1)' for field in output_fields]
+    # normalize output values
+    output_scaler = MinMaxScaler(feature_range=(0, 1))
+    df.loc[:, output_fields] = output_scaler.fit_transform(df.loc[:, output_fields])
 
-    #pdb.set_trace()
-    #y_train = train_data.loc[:, output_fields]
-    # normalize the output differences
-    train_data.loc[:, output_fields] = output_scaler.fit_transform(train_data.loc[:, output_fields])
-    # train_data.loc[:, prev_output_fields] = output_scaler.transform(train_data.loc[:, prev_output_fields])
-    test_data.loc[:, output_fields] = output_scaler.transform(test_data.loc[:, output_fields])
-    # test_data.loc[:, prev_output_fields] = output_scaler.transform(test_data.loc[:, prev_output_fields])
-    # unstack time series to columns
-    train_data = train_data.unstack(level=1)
-    test_data = test_data.unstack(level=1)
+    # expand the data (L, p+J+1) to (L-tau+1, tau, p+J+1)
+    expanded_df = []
+    for i in range(len(df)-timestep):
+        expanded_df.append(df.iloc[i:i+timestep,:].values)
+    data = np.array(expanded_df)
 
-    p = len(input_fields)
-    J = len(output_fields)
+    n_train = int(0.7*len(data))
+    train_samples = np.random.choice(len(data), n_train, replace=False)
+    test_samples = [i for i in range(len(data)) if i not in train_samples] 
 
-    train_trial_names = train_data.index
-    test_trial_names = test_data.index
-    
-    X_train = train_data[input_fields].values.reshape(n_train, p, max_duration).transpose(0, 2, 1) 
-    X_test = test_data[input_fields].values.reshape(num_trials-n_train, p, max_duration).transpose(0, 2, 1)
-    y_train = train_data[output_fields].values.reshape(n_train, J, max_duration).transpose(0, 2, 1)
-    y_test = test_data[output_fields].values.reshape(num_trials-n_train, J, max_duration).transpose(0, 2, 1)
-    
-    # convert start states dataframe to regular dictionary
-    start_states = start_states.to_dict(orient='index')
+    train_data = data[train_samples, :, :]
+    test_data = data[test_samples, :, :] 
+   
+    input_field_rng = [1, 2]
+    output_field_rng = [3, 4, 6, 7]
+
+    X_train = train_data[:, :, input_field_rng]
+    y_train = train_data[:, :, output_field_rng]
+    X_test = test_data[:, :, input_field_rng]
+    y_test = test_data[:, :, output_field_rng]
     # access trial of specific inputs with df.loc['INPUT_VALUES', :]
-    return (X_train, X_test, y_train, y_test, train_trial_names, test_trial_names, output_scaler, start_states, max_duration)
+    return (X_train, X_test, y_train, y_test, input_scaler)
 
 
