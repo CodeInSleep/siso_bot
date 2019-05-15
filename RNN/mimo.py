@@ -24,7 +24,7 @@ from sklearn.externals import joblib
 from visualize import visualize_3D
 from transform import transform, input_fields, output_fields_encoded, output_fields_decoded, others, network_settings
 
-fname = 'trial_1000.csv'
+fname = 'trial_3_to_6.csv'
 
 # network parameter
 p = len(input_fields)
@@ -125,6 +125,7 @@ def make_model(model_params, weights=None):
 
     return model
 
+# TODO: check if this is right
 def decode_angles(cos_sin_vals):
     return arctan2(cos_sin_vals[:, 1], cos_sin_vals[:, 0]).reshape(-1, 1)
 
@@ -227,7 +228,7 @@ if __name__ == '__main__':
     '''
 
     # for debug purposes
-    n = 2
+    n = 0
     _X_train = X_train[n, :100]
     _y_train = output_scaler.inverse_transform(y_train[n, :100])
     _y_train = np.cumsum(_y_train, axis=0)
