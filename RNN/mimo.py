@@ -22,13 +22,13 @@ from sklearn.metrics import mean_squared_error
 from sklearn.externals import joblib
 
 from visualize import visualize_3D
-from transform import transform, input_fields, output_fields, others, network_settings
+from transform import transform, input_fields, output_fields_encoded, output_fields_decoded, others, network_settings
 
 fname = 'trial_1000.csv'
 
 # network parameter
 p = len(input_fields)
-J = len(output_fields)
+J = len(output_fields_encoded)
 layers_dims = [p, 10, J, J]
 #fname = 'trial_0_to_3dot5_step_0dot1.csv'
 
@@ -74,6 +74,7 @@ def predict_seq(model, X, output_scaler):
 
     prediction = np.squeeze(prediction)
     prediction = output_scaler.inverse_transform(prediction)
+    prediction = np.cumsum(prediction, axis=0)
     prediction = np.concatenate((prediction[:,:2], 
             decode_angles(prediction[:,2:])),axis=1)
 
@@ -119,7 +120,8 @@ def make_model(model_params, weights=None):
     if weights:
         # override default weights
         model.set_weights(weights)
-    model.compile(loss='mean_squared_error', optimizer='adam')
+    optimizer = Adam(lr=1e-4)
+    model.compile(loss='mean_squared_error', optimizer=optimizer)
 
     return model
 
@@ -148,25 +150,33 @@ if __name__ == '__main__':
     y_train_fname = os.path.join(dirpath, 'y_train.npy')
     y_test_fname = os.path.join(dirpath, 'y_test.npy')
     input_scaler_fname = os.path.join(dirpath, 'input_scaler.pkl')
-    output_scaler_fname = os.path.join(dirpath, 'output_scaler.pkl')   
+    output_scaler_fname = os.path.join(dirpath, 'output_scaler.pkl')
+    train_ss_fname = os.path.join(dirpath, 'train_start_states.npy')
+    test_ss_fname = os.path.join(dirpath, 'test_start_states.npy')
     if os.path.isfile(X_train_fname):
         X_train = np.load(os.path.join(dirpath, 'X_train.npy'), allow_pickle=True) 
         X_test = np.load(os.path.join(dirpath, 'X_test.npy'), allow_pickle=True)
         y_train = np.load(os.path.join(dirpath, 'y_train.npy'), allow_pickle=True)
         y_test = np.load(os.path.join(dirpath, 'y_test.npy'), allow_pickle=True)
+        train_ss = np.load(train_ss_fname)
+        test_ss = np.load(test_ss_fname)
         input_scaler = joblib.load(input_scaler_fname)
         output_scaler = joblib.load(output_scaler_fname)
-        data_info = load_obj(dirpath, 'data_info') 
+        data_info = load_obj(dirpath, 'data_info')
+
     else:
-        X_train, X_test, y_train, y_test, input_scaler, output_scaler, data_info = transform(df, count=-1)
+        X_train, X_test, y_train, y_test, input_scaler, output_scaler, train_ss, test_ss, data_info = transform(df, count=-1)
 
         np.save(X_train_fname, X_train)
         np.save(X_test_fname, X_test)
         np.save(y_train_fname, y_train)
         np.save(y_test_fname, y_test)
+        np.save(train_ss_fname, train_ss)
+        np.save(test_ss_fname, test_ss)
         joblib.dump(input_scaler, input_scaler_fname)
         joblib.dump(output_scaler, output_scaler_fname)
         save_obj(data_info, dirpath, 'data_info')
+
 
     train_model_settings = {
             'batch_size': batch_size,
@@ -175,7 +185,7 @@ if __name__ == '__main__':
         }
 
     model = make_model(train_model_settings)
-    epochs = 10
+    epochs = 30
     # learning curver
     train_loss_history = []
     test_loss_history = []
@@ -217,9 +227,10 @@ if __name__ == '__main__':
     '''
 
     # for debug purposes
-    n = 0
-    _X_train = X_train[n]
-    _y_train = output_scaler.inverse_transform(y_train[n])
+    n = 2
+    _X_train = X_train[n, :100]
+    _y_train = output_scaler.inverse_transform(y_train[n, :100])
+    _y_train = np.cumsum(_y_train, axis=0)
     _y_train = np.concatenate((_y_train[:,:2], 
         decode_angles(_y_train[:,2:])),axis=1)
     #_y_train = y_train[n]
@@ -233,7 +244,6 @@ if __name__ == '__main__':
     ax1 = fig.add_subplot(121)
     ax2 = fig.add_subplot(122)
     fig.show()
-   
 
     train_batch_len = data_info['train_batch_len']
     test_batch_len = data_info['test_batch_len']
@@ -268,14 +278,21 @@ if __name__ == '__main__':
         # make prediction on a test sequence
         pred_model = convert_to_inference_model(model)
         # predict on one trial at a time
-        test_predictions = predict_seq(pred_model, _X_test,
+        train_predictions = predict_seq(pred_model, _X_train,
                 output_scaler)
 
+        #start_state = train_ss['{}'.format(n)]
+        # add onto the start state
+        #pdb.set_trace()
+        #train_predictions = train_predictions + train_ss[n]
+        # get rid of warm up 
+        #train_predictions = train_predictions[10:100,:]
+        #_y_train = _y_train[10:100,:]
         ax1.clear()
         ax2.clear()
-        visualize_3D(twoD2threeD(np.cumsum(_y_test, axis=0)), 
+        visualize_3D(twoD2threeD(_y_train), 
                 ax1, plt_arrow=True) 
-        visualize_3D(twoD2threeD(np.cumsum(test_predictions, axis=0)), 
+        visualize_3D(twoD2threeD(train_predictions), 
                 ax2, plt_arrow=True)
         plt.draw()
         plt.pause(4)
