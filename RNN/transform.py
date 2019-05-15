@@ -11,8 +11,12 @@ input_fields = ['left_pwm', 'right_pwm']
 output_fields = ['model_pos_x', 'model_pos_y', 'theta_cos', 'theta_sin']
 #output_fields = ['model_pos_x', 'model_pos_y']
 others = ['sim_time']
-p = len(input_fields)
-J = len(output_fields)
+network_settings = {
+    'p': len(input_fields),
+    'J': len(output_fields),
+    'batch_size': 32,
+    'timestep': 5
+}
 
 np.random.seed(7)
 def truncate(num, digits):
@@ -69,42 +73,59 @@ def transform(df, train_percentage=0.7, count=-1):
     df.loc[:, 'left_pwm'] = df.loc[:, 'left_pwm'].apply(truncate, args=(3,))
     df.loc[:, 'right_pwm'] = df.loc[:, 'right_pwm'].apply(truncate, args=(3,))
     df.loc[:, 'input'] = 'l_'+df.loc[:, 'left_pwm'].map(str)+'_r_'+df.loc[:, 'right_pwm'].map(str)
-    df = df.iloc[:count, :]
 
-    # normalize inputs
+     # normalize inputs
     input_scaler = MinMaxScaler(feature_range=(0, 1))
-    df.loc[:,input_fields] = input_scaler.fit_transform(df.loc[:,input_fields])
+    df.loc[:,input_fields] = input_scaler.fit_transform(
+            df.loc[:,input_fields])
     # provide a summary of inputs
     input_summary = df.groupby('input').apply(lambda x: x.describe())
 
     # time difference on the output fields
     df.loc[:, output_fields] = df.loc[:, output_fields].diff().fillna(0)
+
+    batch_size = network_settings['batch_size']
+    timestep = network_settings['timestep']
+    p = network_settings['p']
+    J = network_settings['J']
+    # trim data set to a multiple of batch size
+    # df = df.iloc[:-(len(df)%batch_size), :]
+    n_train = int(0.7*len(df))
+    n_test = len(df) - n_train
+    train_data = df.iloc[:n_train, :]
+    test_data = df.iloc[n_train:, :] 
     
+    train_data = train_data.iloc[:-(len(train_data)%batch_size), :]
+    test_data = test_data.iloc[:-(len(test_data)%batch_size), :]
+
     # normalize output values
     output_scaler = MinMaxScaler(feature_range=(0, 1))
-    df.loc[:, output_fields] = output_scaler.fit_transform(df.loc[:, output_fields])
+    train_data.loc[:, output_fields] = output_scaler.fit_transform(train_data.loc[:, output_fields])
+    test_data.loc[:, output_fields] = output_scaler.transform(test_data.loc[:, output_fields])
+
+    n_train_batch_len = int(n_train/batch_size)
+    n_test_batch_len = int(n_test/batch_size)
+
+    X_train = train_data.loc[:, input_fields].values.reshape(
+            batch_size, n_train_batch_len, p)
+    y_train = train_data.loc[:, output_fields].values.reshape(
+            batch_size, n_train_batch_len, J)
+    X_test = test_data.loc[:, input_fields].values.reshape(
+            batch_size, n_test_batch_len, p)
+    y_test = test_data.loc[:, output_fields].values.reshape(
+            batch_size, n_test_batch_len, J)
 
     # expand the data (L, p+J+1) to (L-tau+1, tau, p+J+1)
-    expanded_df = []
-    for i in range(len(df)-timestep):
-        expanded_df.append(df.iloc[i:i+timestep,:].values)
-    data = np.array(expanded_df)
-
-    n_train = int(0.7*len(data))
-    train_samples = np.random.choice(len(data), n_train, replace=False)
-    test_samples = [i for i in range(len(data)) if i not in train_samples] 
-
-    train_data = data[train_samples, :, :]
-    test_data = data[test_samples, :, :] 
+    #tra.reshape((batch_size, n_train_batch_l0en, -1))
+    #test_data.reshape((batch_size, n_test_batch_len, -1))
    
-    input_field_rng = [1, 2]
-    output_field_rng = [3, 4, 6, 7]
-
-    X_train = train_data[:, :, input_field_rng]
-    y_train = train_data[:, :, output_field_rng]
-    X_test = test_data[:, :, input_field_rng]
-    y_test = test_data[:, :, output_field_rng]
+    data_info = {
+            'n_train': n_train,
+            'n_test': n_test,
+            'train_batch_len': n_train/batch_size,
+            'test_batch_len': n_test/batch_size
+    }
     # access trial of specific inputs with df.loc['INPUT_VALUES', :]
-    return (X_train, X_test, y_train, y_test, input_scaler)
+    return (X_train, X_test, y_train, y_test, input_scaler, output_scaler, data_info)
 
 
