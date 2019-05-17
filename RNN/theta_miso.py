@@ -15,10 +15,13 @@ from transform import truncate, difference
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
-from transform import train_test_split_to_batches
+from transform import trim_to_batch_size 
 import pdb
 input_fields = ['left_pwm', 'right_pwm']
 
+layers_dims = [3, 10, 10, 2]
+batch_size = 32
+time_step = 20
 fname = 'trial_1000.csv'
 def encode_angle(df, theta_field):
     df.loc[:, theta_field+'_cos'] = df.loc[:, theta_field].apply(lambda x: cos(x))
@@ -38,26 +41,45 @@ def transform(df):
     df.loc[:,input_fields] = input_scaler.fit_transform(df.loc[:,input_fields])
 
     theta_data = df.loc[:, ['sim_time']+input_fields+['theta']]
-    theta_data.loc[:, 'theta(t-1)'] = difference(theta_data.loc[:, 'theta'])
     theta_data.loc[:, 'sim_time'] = theta_data.loc[:, 'sim_time'].diff().fillna(0)
     theta_data = theta_data.iloc[:-1]
     encode_angle(theta_data, 'theta')
-    encode_angle(theta_data, 'theta(t-1)')
-    theta_data = theta_data.drop(['theta', 'theta(t-1)'], axis=1)
-    pdb.set_trace()
+    theta_data = theta_data.drop('theta', axis=1)
     theta_data = theta_data.reindex(columns=['sim_time', 'left_pwm', 'right_pwm',
-        'theta(t-1)_cos', 'theta(t-1)_sin', 'theta_cos', 'theta_sin'])
-    pdb.set_trace()
-    return theta_data.values
+        'theta_cos', 'theta_sin'])
 
-def fit_model(X_train, y_train):
+    X_train, X_test, y_train, y_test = train_test_split(theta_data.loc[:, ['sim_time', 'left_pwm', 'right_pwm']], theta_data.loc[:, ['theta_cos', 'theta_sin']], test_size=0.3, random_state = 42)
+    
+    p = layers_dims[0]
+    J = layers_dims[-1]
+
+    X_train = trim_to_batch_size(X_train, batch_size)
+    X_test = trim_to_batch_size(X_test, batch_size)
+    y_train = trim_to_batch_size(y_train, batch_size)
+    y_test = trim_to_batch_size(y_test, batch_size)
+
+    train_batch_len = int(len(X_train)/batch_size)
+    test_batch_len = int(len(X_test)/batch_size)
+    
+    X_train = X_train.values.reshape(
+            batch_size, train_batch_len, p)
+    X_test = X_test.values.reshape(
+            batch_size, test_batch_len, p)
+    y_train = y_train.values.reshape(
+            batch_size, train_batch_len, J)
+    y_test = y_test.values.reshape(
+            batch_size, test_batch_len, J)
+
+    return (X_train, X_test, y_train, y_test, train_batch_len, test_batch_len)
+
+def make_model():
     model = Sequential()
 
-    model.add(Dense(10, batch_input_shape=(batch_size, time_step, layers_dims[0]),
+    model.add(Dense(layers_dims[1], batch_input_shape=(batch_size, time_step, layers_dims[0]),
         activation='tanh'))
     model.add(Dropout(0.2))
-    model.add(GRU(10, activation='tanh'))
-    model.add(Dense(2))
+    model.add(GRU(layers_dims[2], activation='tanh', return_sequences=True, stateful=True))
+    model.add(Dense(layers_dims[3]))
 
     optimizer = Adam(lr=1e-5)
     model.compile(loss='mean_squared_error', optimizer=optimizer)
@@ -78,31 +100,49 @@ if __name__ == '__main__':
     datafile = os.path.join(dirpath, fname)
     df = pd.read_csv(datafile, engine='python')
 
-    X_train, X_test, y_train, y_test = transform(df)
+    X_train, X_test, y_train, y_test, train_batch_len, test_batch_len = transform(df)
    
-    model = fit_model()
+    model = make_model()
    
-    iterations = 6
-    epochs = 30
-    train_history = []
-    test_history = []
-    decoded_y_train = decode_angles(y_train)
-    y_test = decode_angles(y_test)
-    for ep in range(epochs):
-        model.fit(X_train, y_train, epochs=epochs)
+    iterations = 20
+    # learning curver
+    train_loss_history = []
+    test_loss_history = []
+  
+    # decoded_y_train = decode_angles(y_train)
+    # y_test = decode_angles(y_test)
+    for it in range(iterations):
+        print("iteration %d" % it)
+        for j in range(int(train_batch_len/time_step)-1):
+            time_seg = range((j*time_step), ((j+1)*time_step))
+            model.fit(X_train[:, time_seg, :], y_train[:, time_seg, :], 
+                    batch_size=batch_size, verbose=1, shuffle=False)
 
-        train_predictions = model.predict(X_train)
-        train_predictions = decode_angles(train_predictions)
-        test_predictions = model.predict(X_test)
-        test_predictions = decode_angles(test_predictions)
-    
-        train_history.append(mean_squared_error(train_predictions, decoded_y_train))
-        test_history.append(mean_squared_error(test_predictions, y_test))
+        model.reset_states()
+
+        # calculate rmse for train data
+        train_rmse = 0
+        for j in range(int(train_batch_len/time_step)-1):
+            time_seg = range((j*time_step), ((j+1)*time_step))
+            pred = model.predict(X_train[:, time_seg, :])
+            for k in range(batch_size):
+                train_rmse += mean_squared_error(pred[k], y_train[k, time_seg, :])
+        train_rmse = np.sqrt(train_rmse)/(batch_size*train_batch_len)
+        train_loss_history.append(train_rmse)
+        
+        test_rmse = 0
+        for j in range(int(test_batch_len/time_step)-1):
+            time_seg = range((j*time_step), ((j+1)*time_step))
+            pred = model.predict(X_test[:, time_seg, :])
+            for k in range(batch_size):
+                test_rmse += mean_squared_error(pred[k], y_test[k, time_seg, :])
+        test_rmse = np.sqrt(test_rmse)/(batch_size*test_batch_len)
+        test_loss_history.append(test_rmse)
 
 
-    ep_range = range(0, epochs)
-    plt.plot(ep_range, train_history)
-    plt.plot(ep_range, test_history)
+    ep_range = range(0, iterations)
+    plt.plot(ep_range, train_loss_history)
+    plt.plot(ep_range, test_loss_history)
     plt.title('theta miso prediction (FNN)')
     plt.xlabel('epoch')
     plt.ylabel('RMSE theta(rad)')
