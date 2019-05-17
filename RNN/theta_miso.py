@@ -113,7 +113,7 @@ if __name__ == '__main__':
    
     model = make_model()
    
-    iterations = 30
+    iterations = 300
     # learning curver
     train_loss_history = []
     test_loss_history = []
@@ -130,36 +130,42 @@ if __name__ == '__main__':
         model.reset_states()
 
         # calculate rmse for train data
-        train_rmse = 0
+        train_se = []
         for j in range(int(train_batch_len/time_step)-1):
             time_seg = range((j*time_step), ((j+1)*time_step))
             pred = model.predict(X_train[:, time_seg, :])
-            model.reset_states()
+
+            train_se_over_timestep = []
             for k in range(batch_size):
                 _pred = decode_angles(pred[k])
                 _gnd_truth = decode_angles(y_train[k, time_seg, :])
                 
                 #pdb.set_trace()
                 diff = np.apply_along_axis(angle_dist, 1,
-                        np.concatenate((_pred, _gnd_truth),
-                            axis=1))
-                train_rmse += np.mean(diff**2)
-        train_rmse = np.sqrt(train_rmse)/(batch_size*train_batch_len)
+                        np.concatenate((_pred, _gnd_truth), axis=1))
+                train_se_over_timestep.append(diff**2)
+            train_se.append(train_se_over_timestep)
+        model.reset_states()
+        train_rmse = np.sqrt(np.mean(train_se))
         train_loss_history.append(train_rmse)
         
-        test_rmse = 0
+        test_se = []
         for j in range(int(test_batch_len/time_step)-1):
             time_seg = range((j*time_step), ((j+1)*time_step))
             pred = model.predict(X_test[:, time_seg, :])
-            model.reset_states()
+            
+            test_se_over_timestep = []
             for k in range(batch_size):
                 _pred = decode_angles(pred[k])
                 _gnd_truth = decode_angles(y_test[k, time_seg, :])
                 diff = np.apply_along_axis(angle_dist, 1,
                         np.concatenate((_pred, _gnd_truth),
                             axis=1))
-                test_rmse += np.mean(diff**2)
-        test_rmse = np.sqrt(test_rmse)/(batch_size*test_batch_len)
+                test_se_over_timestep.append(diff**2)
+            test_se.append(test_se_over_timestep)
+        model.reset_states()
+
+        test_rmse = np.sqrt(np.mean(test_se))
         test_loss_history.append(test_rmse)
 
     ep_range = range(0, iterations)
