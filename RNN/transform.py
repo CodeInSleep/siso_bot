@@ -1,3 +1,4 @@
+import os
 import math
 import pandas as pd
 import numpy as np
@@ -8,6 +9,7 @@ from pandas import Series
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
 from visualize import visualize_3D
+from utils import trim_to_mult_of, save_obj, load_obj
 
 input_fields = ['left_pwm', 'right_pwm']
 output_fields_decoded = ['model_pos_x', 'model_pos_y', 'theta']
@@ -93,73 +95,147 @@ def calc_batch_size(df, batch_size):
     n_test_batch_len = int(n_test/batch_size)
     return (n_train, n_test, n_train_batch_len, n_test_batch_len)
 
-def transform(df, train_percentage=0.7, count=-1):
-    timestep = 5
-    df.loc[:, 'theta'] = df.loc[:, 'theta'].apply(lambda x: math.radians(x))
-    df.loc[:, 'left_pwm'] = df.loc[:, 'left_pwm'].apply(truncate, args=(3,))
-    df.loc[:, 'right_pwm'] = df.loc[:, 'right_pwm'].apply(truncate, args=(3,))
-    df.loc[:, 'input'] = 'l_'+df.loc[:, 'left_pwm'].map(str)+'_r_'+df.loc[:, 'right_pwm'].map(str)
+def label_trials(df):
+    trial_counts = {}
 
-    # normalize inputs
-    input_scaler = MinMaxScaler(feature_range=(0, 1))
-    df.loc[:,input_fields] = input_scaler.fit_transform(df.loc[:,input_fields])
+    transitions = df.loc[:, 'left_pwm'].diff().nonzero()[0]
+    trial_intervals = []
+    prev_t = transitions[0]
+    for t in transitions[1:]:
+        trial_intervals.append((prev_t, t))
+        prev_t = t
+    counta = 0
+    for start, end in trial_intervals:
+        current_trial_name = df.iloc[start+1].loc['input']
+        # no change in trial
+        if current_trial_name in trial_counts:
+            trial_counts[current_trial_name] += 1
+        else:
+            trial_counts[current_trial_name] = 1
+        trial_idx = trial_counts[current_trial_name]
+        df.loc[start:end, 'input'] = current_trial_name + '_' + str(trial_idx)
+    
+    return df
 
-    # provide a summary of inputs
-    # input_summary = df.groupby('input').apply(lambda x: x.describe())
+def transform_group(group_df, max_duration, output_fields):
+    """
+        transform each group so that each trial have length of max_duration
+    """
+    print(group_df.name)
+    #group_df = group_df.reset_index().drop('input', axis=1)
+    cols = group_df.columns
 
-    batch_size = network_settings['batch_size']
-    timestep = network_settings['timestep']
-    p = network_settings['p']
-    J = network_settings['J']
-    # trim data set to a multiple of batch size
-    # df = df.iloc[:-(len(df)%batch_size), :]
-    n_train, n_test, n_train_batch_len, n_test_batch_len = calc_batch_size(df, batch_size)
-    network_settings['n_train_batch_len'] = n_train_batch_len
-    network_settings['n_test_batch_len'] = n_test_batch_len
-    df.loc[:, 'theta(t-1)'] = difference(df.loc[:, 'theta'])
-    # get rid of first entry without previous angle
-    df = df.iloc[1:]
+    if max_duration - group_df.shape[0] != 0:
+        padding = pd.DataFrame(np.zeros((max_duration-group_df.shape[0], group_df.shape[1]), dtype=int))
+        padding.columns = cols
+        
+        padding.loc[:, output_fields] = np.repeat(np.array(group_df.iloc[group_df.shape[0]-1].loc[output_fields]),len(padding)).reshape(len(padding), -1)
+    
+        # pad the time series with
+        padded_group_df = pd.DataFrame(pd.np.row_stack([group_df, padding]))
+        padded_group_df.columns = cols
+        padded_group_df = padded_group_df.fillna(0)
+    else:
+        padded_group_df = group_df
+    #return padded_group_df
+    return padded_group_df
 
-    train_data = df.iloc[:n_train, :]
-    test_data = df.iloc[n_train:, :]
+def transform(df, layers_dims, dirpath=None, cached=False):
+    X_train_fname = 'X_train.npy'
+    X_test_fname = 'X_test.npy'
+    y_train_fname = 'y_train.npy'
+    y_test_fname = 'y_test.npy'
+    if not cached:
+        df.loc[:, 'theta'] = df.loc[:, 'theta'].apply(lambda x: math.radians(x))
 
-    '''
-    debug = False
-    if debug:
-        fig = plt.figure()
-        ax1 = fig.add_subplot(111)
-        visualize_3D(np.expand_dims(train_data[:100].loc[:, output_fields_decoded].values, axis=0), ax1, plt_arrow=True)
-        fig.show()
-    '''
-    # remove bias of starting point in 
-    train_data, train_start_states = remove_bias_in_batches(train_data, batch_size)
-    test_data, test_start_states = remove_bias_in_batches(test_data, batch_size)
+        df.loc[:, 'left_pwm'] = df.loc[:, 'left_pwm'].apply(truncate, args=(3,))
+        df.loc[:, 'right_pwm'] = df.loc[:, 'right_pwm'].apply(truncate, args=(3,))
 
-    # make sure train and test data are multiple of batch_size
-    train_data = trim_to_batch_size(train_data, batch_size)
-    test_data = trim_to_batch_size(test_data, batch_size)
+        df.loc[:, 'input'] = 'l_'+df.loc[:, 'left_pwm'].map(str)+'_r_'+df.loc[:, 'right_pwm'].map(str)
 
-    # normalize output values
-    output_scaler = MinMaxScaler(feature_range=(0, 1))
-    train_data.loc[:, output_fields] = output_scaler.fit_transform(train_data.loc[:, output_fields])
-    test_data.loc[:, output_fields] = output_scaler.transform(test_data.loc[:, output_fields])
+        # normalize inputs
+        input_scaler = MinMaxScaler(feature_range=(0, 1))
+        df.loc[:,input_fields] = input_scaler.fit_transform(df.loc[:,input_fields])
 
-    X_sel = ['sim_time'] + input_fields + ['theta(t-1)']
-    y_sel = output_fields + ['theta']
+        theta_data = df.loc[:, ['input', 'sim_time']+input_fields+['theta']]
+        theta_data.loc[:, 'theta(t-1)'] = theta_data.loc[:, 'theta'].shift(1)
+        theta_data.loc[:, 'sim_time'] = theta_data.loc[:, 'sim_time'].diff()
+        theta_data = theta_data.iloc[1:]
+        #plot_target_angles(np.expand_dims(theta_data.loc[:, 'theta'].values.reshape(-1, 1), axis=0))
+        encode_angle(theta_data, 'theta(t-1)')
+        encode_angle(theta_data, 'theta')
+        
+        theta_data = theta_data.drop(['theta(t-1)', 'theta'], axis=1)
+        # theta_data = theta_data.reindex(columns=fields)
 
-    X_train, X_test, y_train, y_test = train_test_split_to_batches(
-            train_data, test_data, X_sel, y_sel, network_settings)
-    # expand the data (L, p+J+1) to (L-tau+1, tau, p+J+1)
-    #tra.reshape((batch_size, n_train_batch_l0en, -1))
-    #test_data.reshape((batch_size, n_test_batch_len, -1))
-   
-    data_info = {
-            'n_train': n_train,
-            'n_test': n_test,
-            'train_batch_len': n_train/batch_size,
-            'test_batch_len': n_test/batch_size
-    }
-    # access trial of specific inputs with df.loc['INPUT_VALUES', :]
-    return (X_train, X_test, y_train, y_test, input_scaler, output_scaler, train_start_states, test_start_states, data_info)
+        # to debug
+        # theta_data = theta_data.iloc[:1000]
 
+        theta_data = label_trials(theta_data)
 
+        # group by trial name and turn trials into batches
+        grouped = theta_data.groupby('input')
+        start_of_batches = grouped.first()
+        num_trials = len(grouped)
+        # store max duration of a trial
+        max_duration = max(grouped['sim_time'].count())
+
+        theta_data = theta_data.groupby('input').apply(lambda x: transform_group(
+            x, max_duration, ['theta(t-1)_cos', 'theta(t-1)_sin', 'theta_cos', 'theta_sin']))
+
+        n_train = int(num_trials*0.7)*max_duration
+        train_data = theta_data[:n_train]
+        test_data = theta_data[n_train:]
+
+        X_sel = ['sim_time', 'left_pwm', 'right_pwm', 'theta(t-1)_cos', 'theta(t-1)_sin']
+        y_sel = ['theta_cos', 'theta_sin']
+        X_train = train_data.loc[:, X_sel]
+        y_train = train_data.loc[:, y_sel]
+        X_test = test_data.loc[:, X_sel]
+        y_test = test_data.loc[:, y_sel]
+
+        p = layers_dims[0]
+        J = layers_dims[-1]
+
+        X_train = trim_to_mult_of(X_train, max_duration)
+        X_test = trim_to_mult_of(X_test, max_duration)
+        y_train = trim_to_mult_of(y_train, max_duration)
+        y_test = trim_to_mult_of(y_test, max_duration)
+
+        X_train.to_pickle(os.path.join(dirpath, 'X_train.pkl'))
+        X_test.to_pickle(os.path.join(dirpath, 'X_test.pkl'))
+        y_train.to_pickle(os.path.join(dirpath, 'y_train.pkl'))
+        y_test.to_pickle(os.path.join(dirpath, 'y_test.pkl'))
+        print('number of trials in train: %d' % (len(X_train)/max_duration))
+        print('number of trials in test: %d' % (len(X_test)/max_duration))
+        
+        p = layers_dims[0]
+        J = layers_dims[-1]
+        
+        X_train = X_train.values.reshape(
+            -1, max_duration, p)
+        X_test = X_test.values.reshape(
+                -1, max_duration, p)
+        y_train = y_train.values.reshape(
+                -1, max_duration, J)
+        y_test = y_test.values.reshape(
+                -1, max_duration, J)
+
+        np.save(os.path.join(dirpath, X_train_fname), X_train)
+        np.save(os.path.join(dirpath, X_test_fname), X_test)
+        np.save(os.path.join(dirpath, y_train_fname), y_train)
+        np.save(os.path.join(dirpath, y_test_fname), y_test)
+        
+        network_settings = {
+            'timestep': max_duration
+        }
+        save_obj(network_settings, dirpath, 'network_settings')
+    else:
+        X_train = np.load(os.path.join(dirpath, X_train_fname))
+        X_test = np.load(os.path.join(dirpath, X_test_fname))
+        y_train = np.load(os.path.join(dirpath, y_train_fname))
+        y_test = np.load(os.path.join(dirpath, y_test_fname))
+
+        network_settings = load_obj(dirpath, 'network_settings')
+    
+    return (X_train, X_test, y_train, y_test, network_settings['timestep'])
