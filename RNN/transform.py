@@ -47,7 +47,8 @@ def encode_angle(df, theta_field):
     df.loc[:, theta_field+'_sin'] = df.loc[:, theta_field].apply(lambda x: sin(x))
  
 def remove_bias(df, fields, start_states):
-    return df.loc[:, fields] - start_states.loc[df.name, fields]
+    df.loc[:, fields] =  df.loc[:, fields] - start_states.loc[df.name, fields]
+    return df
 
 def remove_bias_in_batches(df, batch_size):
     # assign batch numbers to group by
@@ -98,7 +99,7 @@ def label_trials(df):
     left_transitions = df.loc[:, 'left_pwm'].diff().to_numpy().nonzero()[0]
     right_transitions = df.loc[:, 'right_pwm'].diff().to_numpy().nonzero()[0]
     transitions = np.union1d(left_transitions, right_transitions)
-        
+
     trial_intervals = []
     prev_t = 0
     for t in transitions[1:]:
@@ -159,6 +160,8 @@ def transform(df, layers_dims, dirpath, cached=False):
     theta_y_test_fname = os.path.join(dirpath, 'theta_y_test.pkl')
     pos_y_train_fname = os.path.join(dirpath, 'pos_y_train.pkl')
     pos_y_test_fname = os.path.join(dirpath, 'pos_y_test.pkl')
+    train_traj_fname = os.path.join(dirpath, 'traj_train.pkl')
+    test_traj_fname = os.path.join(dirpath, 'traj_test.pkl')
     if not cached:
         df.loc[:, 'theta'] = df.loc[:, 'theta'].apply(lambda x: math.radians(x))
 
@@ -185,23 +188,18 @@ def transform(df, layers_dims, dirpath, cached=False):
         # pad sequences up to max duration length
         theta_data = theta_data.groupby('input').apply(lambda x: transform_group(
             x, max_duration, output_fields+['sim_time', 'theta(t-1)', 'theta']))
-        pdb.set_trace()
         theta_data = theta_data.drop('input', axis=1)
         encode_angle(theta_data, 'theta(t-1)')
         encode_angle(theta_data, 'theta')
 
         target_angles = theta_data.loc[:, 'theta']
-        theta_data = theta_data.drop(['theta(t-1)', 'theta'], axis=1)
+        target_pos = theta_data.loc[:, output_fields]
 
         theta_data = theta_data.groupby('input').apply(lambda x:
             diff(x, ['sim_time', 'model_pos_x', 'model_pos_y']))
 
         # save ground truth trajectory
-        gnd_truth = pd.concat((theta_data.loc[:, output_fields], target_angles), axis=1).copy()
-        gnd_truth.to_pickle(os.path.join(dirpath, 'trajectory.pkl'))
-
-        pdb.set_trace()
-        
+        traj_data = pd.concat((target_pos, target_angles), axis=1).copy()        
         # theta_data = theta_data.iloc[1:]
         #plot_target_angles(np.expand_dims(theta_data.loc[:, 'theta'].values.reshape(-1, 1), axis=0))
         
@@ -212,9 +210,15 @@ def transform(df, layers_dims, dirpath, cached=False):
         # pdb.set_trace()
 
         n_train = int(num_trials*0.7)*max_duration
-        train_data = theta_data[:n_train]
-        test_data = theta_data[n_train:]
+        train_data = theta_data.iloc[:n_train]
+        test_data = theta_data.iloc[n_train:]
+        train_traj_data = traj_data.iloc[:n_train]
+        test_traj_data = traj_data.iloc[n_train:]
 
+        pdb.set_trace()
+        train_traj_data = train_traj_data.groupby('input').apply(lambda x: remove_bias(x, output_fields, start_of_batches))
+        test_traj_data = test_traj_data.groupby('input').apply(lambda x: remove_bias(x, output_fields, start_of_batches))
+        pdb.set_trace()
         X_sel = ['sim_time', 'left_pwm', 'right_pwm', 'theta(t-1)_cos', 'theta(t-1)_sin']
         y_sel = ['theta_cos', 'theta_sin', 'model_pos_x', 'model_pos_y']
         X_train = train_data.loc[:, X_sel]
@@ -229,6 +233,8 @@ def transform(df, layers_dims, dirpath, cached=False):
         X_test = trim_to_mult_of(X_test, max_duration)
         y_train = trim_to_mult_of(y_train, max_duration)
         y_test = trim_to_mult_of(y_test, max_duration)
+        train_traj_data = trim_to_mult_of(train_traj_data, max_duration)
+        test_traj_data = trim_to_mult_of(test_traj_data, max_duration)
 
         X_train.to_pickle(X_train_fname)
         X_test.to_pickle(X_test_fname)
@@ -240,6 +246,8 @@ def transform(df, layers_dims, dirpath, cached=False):
         theta_y_test.to_pickle(theta_y_test_fname)
         pos_y_test = y_test.loc[:, y_sel[2:]]
         pos_y_test.to_pickle(pos_y_test_fname)
+        train_traj_data.to_pickle(train_traj_fname)
+        test_traj_data.to_pickle(test_traj_fname)
 
         # pdb.set_trace()
         print('number of trials in train: %d' % (len(X_train)/max_duration))
@@ -256,9 +264,9 @@ def transform(df, layers_dims, dirpath, cached=False):
         X_train = pd.read_pickle(X_train_fname)
         X_test = pd.read_pickle(X_test_fname)
         theta_y_train = pd.read_pickle(theta_y_train_fname)
-        pos_y_train = np.load(pos_y_train_fname)
-        theta_y_test = np.load(theta_y_test_fname)
-        pos_y_test = np.load(pos_y_test_fname)
+        pos_y_train = pd.read_pickle(pos_y_train_fname)
+        theta_y_test = pd.read_pickle(theta_y_test_fname)
+        pos_y_test = pd.read_pickle(pos_y_test_fname)
 
         data_info = load_obj(dirpath, 'data_info')
     
