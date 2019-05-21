@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 from transform import transform
 from visualize import visualize_3D
-from utils import decode_angles, plot_target_angles, save_obj, make_model
+from utils import decode_angles, plot_target_angles, save_obj, make_model, save_model, angle_dist
 
 input_fields = ['left_pwm', 'right_pwm']
 
@@ -42,12 +42,22 @@ if __name__ == '__main__':
     datafile = os.path.join(dirpath, fname)
     df = pd.read_csv(datafile, engine='python')
 
-    X_train, X_test, y_train, y_test, timestep = transform(df, layers_dims, dirpath=dirpath, cached=False)
+    p = layers_dims[0]
+    J = layers_dims[-1]
+    X_train, X_test, theta_y_train, _, theta_y_test, _, timestep = transform(df, layers_dims, dirpath, cached=False)
+    X_train = X_train.values.reshape(
+        -1, timestep, p)
+    X_test = X_test.values.reshape(
+            -1, timestep, p)
+    theta_y_train = theta_y_train.values.reshape(
+            -1, timestep, J)
+    theta_y_test = theta_y_test.values.reshape(
+                -1, timestep, J)
 
     num_batches = 16
-    model = make_model(num_batches, timestep, layers_dims)
+    theta_model = make_model(num_batches, timestep, layers_dims)
    
-    iterations = 5
+    iterations = 10
     epochs = 30
     # learning curver
     train_loss_history = []
@@ -57,7 +67,7 @@ if __name__ == '__main__':
     # y_test = decode_angles(y_test)
     for it in range(iterations):
         print("iteration %d" % it)
-        model.fit(X_train, y_train, epochs=epochs, batch_size=num_batches, verbose=1, shuffle=False)
+        theta_model.fit(X_train, theta_y_train, epochs=epochs, batch_size=num_batches, verbose=1, shuffle=False)
         # for j in range(int(train_bl/time_step)-1):
         #     time_seg = range((j*time_step), ((j+1)*time_step))
         #     model.fit(X_train[:, time_seg, :], y_train[:, time_seg, :], 
@@ -80,10 +90,10 @@ if __name__ == '__main__':
         #         train_se_over_timestep.append(diff**2)
         #     train_se.append(train_se_over_timestep)
         # model.reset_states()
-        train_predictions = model.predict(X_train)
+        train_predictions = theta_model.predict(X_train)
         for i in range(len(train_predictions)):
             pred = decode_angles(train_predictions[i])
-            gnd_truth = decode_angles(y_train[i])
+            gnd_truth = decode_angles(theta_y_train[i])
 
             diff = np.apply_along_axis(angle_dist, 1,
                 np.concatenate((pred, gnd_truth), axis=1))
@@ -107,14 +117,21 @@ if __name__ == '__main__':
         #         test_se_over_timestep.append(diff**2)
         #     test_se.append(test_se_over_timestep)
         # model.reset_states()
-        test_predictions = model.predict(X_test)
+        test_predictions = theta_model.predict(X_test)
         for i in range(len(X_test)):
             pred = decode_angles(test_predictions[i])
-            gnd_truth = decode_angles(y_test[i])
+            gnd_truth = decode_angles(theta_y_test[i])
 
             diff = np.apply_along_axis(angle_dist, 1,
                 np.concatenate((pred, gnd_truth), axis=1))
             test_se.append(diff**2)
+
+            plt.cla()
+            plt.plot(pred)
+            plt.plot(gnd_truth)
+            plt.legend(['pred', 'ground truth'])
+            plt.grid(True)
+            plt.pause(0.000001)
 
         test_rmse = np.sqrt(np.mean(np.array(test_se)))
         test_loss_history.append(test_rmse)
@@ -122,17 +139,16 @@ if __name__ == '__main__':
         print('train rmse on iteration %d: %f' % (it, train_rmse))
         print('test rmse on iteration %d: %f' % (it, test_rmse))
 
+    model_fname = 'theta_model'
+    save_model(theta_model, dirpath, model_fname)
+
+    error_plot = plt.figure()
     ep_range = range(0, iterations)
     plt.plot(ep_range, train_loss_history)
     plt.plot(ep_range, test_loss_history)
     plt.title('theta miso prediction (RNN)')
     plt.xlabel('epoch')
     plt.ylabel('RMSE theta(rad)')
-    plt.show()
+    error_plot.show()
 
-    fname = 'theta_model'
-    model_json = model.to_json()
-    with open(os.path.join(dirpath, fname+'.json'), 'w') as json_file:
-        json_file.write(model_json)
-    model.save_weights(os.path.join(dirpath, fname+'.h5'))
-
+    
