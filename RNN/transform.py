@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from pandas import Series
 from sklearn.preprocessing import MinMaxScaler
 from visualize import visualize_3D
+from sklearn.externals import joblib 
 from utils import trim_to_mult_of, save_obj, load_obj
 
 input_fields = ['left_pwm', 'right_pwm']
@@ -170,12 +171,7 @@ def transform(df, layers_dims, dirpath, cached=False):
     X_test_fname = os.path.join(dirpath, 'X_test.pkl')
     y_train_fname = os.path.join(dirpath, 'y_train.pkl')
     y_test_fname = os.path.join(dirpath, 'y_test.pkl')
-    # theta_y_train_fname = os.path.join(dirpath, 'theta_y_train.pkl')
-    # theta_y_test_fname = os.path.join(dirpath, 'theta_y_test.pkl')
-    # pos_y_train_fname = os.path.join(dirpath, 'pos_y_train.pkl')
-    # pos_y_test_fname = os.path.join(dirpath, 'pos_y_test.pkl')
-    # train_traj_fname = os.path.join(dirpath, 'traj_train.pkl')
-    # test_traj_fname = os.path.join(dirpath, 'traj_test.pkl')
+    
     if not cached:
         df.loc[:, 'theta'] = df.loc[:, 'theta'].apply(lambda x: math.radians(x))
 
@@ -214,29 +210,22 @@ def transform(df, layers_dims, dirpath, cached=False):
         theta_data = theta_data.groupby(['input']).apply(lambda x:
             diff(x, ['sim_time']))
 
-        # save ground truth trajectory
-        # traj_data = pd.concat((target_pos, target_angles), axis=1).copy()        
-        # theta_data = theta_data.iloc[1:]
-        #plot_target_angles(np.expand_dims(theta_data.loc[:, 'theta'].values.reshape(-1, 1), axis=0))
-        
-        # theta_data = theta_data.reindex(columns=fields)
-
-        # to debug
-        # theta_data = theta_data.iloc[:1000]
-
-        n_train = int(num_trials*0.7)*max_duration
-        train_data = theta_data.iloc[:n_train]
-        test_data = theta_data.iloc[n_train:]
+        n_train = int(num_trials*0.7)
+        trial_names = start_of_batches.index.to_list()
+        train_samples = np.random.choice(num_trials, n_train, replace=False)
+        train_trial_names = [trial_names[i] for i in train_samples]
+        test_samples = np.array([i for i in range(num_trials) if i not in train_samples])
+        test_trial_names = [trial_names[i] for i in test_samples]
+        train_data = theta_data.loc[train_trial_names]
+        test_data = theta_data.loc[test_trial_names]
         # train_traj_data = traj_data.iloc[:n_train]
         # test_traj_data = traj_data.iloc[n_train:]
-        
         X_sel = ['sim_time', 'left_pwm', 'right_pwm', 'model_pos_x(t-1)', 'model_pos_y(t-1)', 'theta(t-1)_cos', 'theta(t-1)_sin']
         y_sel = ['model_pos_x', 'model_pos_y', 'theta_cos', 'theta_sin']
         X_train = train_data.loc[:, X_sel]
         y_train = train_data.loc[:, y_sel]
         X_test = test_data.loc[:, X_sel]
         y_test = test_data.loc[:, y_sel]
-        # pdb.set_trace()
 
         trian_start_of_batches = y_train.groupby('input').first()
         test_start_of_batches = y_test.groupby('input').first()
@@ -251,23 +240,12 @@ def transform(df, layers_dims, dirpath, cached=False):
         X_test = trim_to_mult_of(X_test, max_duration)
         y_train = trim_to_mult_of(y_train, max_duration)
         y_test = trim_to_mult_of(y_test, max_duration)
-        # train_traj_data = trim_to_mult_of(train_traj_data, max_duration)
-        # test_traj_data = trim_to_mult_of(test_traj_data, max_duration)
 
         X_train.to_pickle(X_train_fname)
         X_test.to_pickle(X_test_fname)
         y_train.to_pickle(y_train_fname)
         y_test.to_pickle(y_test_fname)
-        # theta_y_train = y_train.loc[:, y_sel[:2]]
-        # theta_y_train.to_pickle(theta_y_train_fname)
-        # pos_y_train = y_train.loc[:, y_sel[2:]]
-        # pos_y_train.to_pickle(pos_y_train_fname)
-        # theta_y_test = y_test.loc[:, y_sel[:2]]
-        # theta_y_test.to_pickle(theta_y_test_fname)
-        # pos_y_test = y_test.loc[:, y_sel[2:]]
-        # pos_y_test.to_pickle(pos_y_test_fname)
-        # train_traj_data.to_pickle(train_traj_fname)
-        # test_traj_data.to_pickle(test_traj_fname)
+        joblib.dump(input_scaler, os.path.join(dirpath, 'input_scaler.pkl'))
 
         # pdb.set_trace()
         print('number of trials in train: %d' % (len(X_train)/max_duration))
@@ -280,15 +258,14 @@ def transform(df, layers_dims, dirpath, cached=False):
             'num_test_trials': int(len(X_test)/max_duration)
         }
         save_obj(data_info, dirpath, 'data_info')
+        save_obj(train_trial_names, dirpath, 'train_trial_names')
+        save_obj(test_trial_names, dirpath, 'test_trial_names')
+
     else:
         X_train = pd.read_pickle(X_train_fname)
         X_test = pd.read_pickle(X_test_fname)
         y_train = pd.read_pickle(y_train_fname)
         y_test = pd.read_pickle(y_test_fname)
-        # theta_y_train = pd.read_pickle(theta_y_train_fname)
-        # pos_y_train = pd.read_pickle(pos_y_train_fname)
-        # theta_y_test = pd.read_pickle(theta_y_test_fname)
-        # pos_y_test = pd.read_pickle(pos_y_test_fname)
 
         data_info = load_obj(dirpath, 'data_info')
     
