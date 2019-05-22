@@ -136,7 +136,7 @@ def transform_group(group_df, max_duration, output_fields):
         padding = pd.DataFrame(np.zeros((max_duration-group_df.shape[0], group_df.shape[1]), dtype=int))
         padding.columns = cols
         
-        padding.loc[:, output_fields] = np.repeat(group_df.iloc[group_df.shape[0]-1].loc[output_fields].values.reshape(-1, 1), len(padding), axis=1).T
+        # padding.loc[:, output_fields] = np.repeat(group_df.iloc[group_df.shape[0]-1].loc[output_fields].values.reshape(-1, 1), len(padding), axis=1).T
     
         # pad the time series with
         padded_group_df = pd.DataFrame(pd.np.row_stack([group_df, padding]))
