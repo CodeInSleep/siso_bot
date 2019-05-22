@@ -50,20 +50,20 @@ def remove_bias(df, fields, start_states):
     df.loc[:, fields] =  df.loc[:, fields] - start_states.loc[df.name, fields]
     return df
 
-def remove_bias_in_batches(df, batch_size):
-    # assign batch numbers to group by
-    df.loc[:, 'batch_no'] = df.index//batch_size
+# def remove_bias_in_batches(df, batch_size):
+#     # assign batch numbers to group by
+#     df.loc[:, 'batch_no'] = df.index//batch_size
 
-    grouped = df.groupby('batch_no')
-    start_of_batches = grouped.first()
-    # remove x, y, thetas bias of each batch
-    df.loc[:, output_fields] = grouped.apply(lambda x: remove_bias(x, output_fields, start_of_batches))
-    # rotate so that each batch starts at theta=0
+#     grouped = df.groupby('batch_no')
+#     start_of_batches = grouped.first()
+#     # remove x, y, thetas bias of each batch
+#     df.loc[:, output_fields] = grouped.apply(lambda x: remove_bias(x, output_fields, start_of_batches))
+#     # rotate so that each batch starts at theta=0
 
-    # time difference on the output fields
-    df.loc[:, output_fields+['sim_time']] = df.groupby('batch_no').apply(
-            lambda x: x.loc[:, output_fields+['sim_time']].diff().fillna(0))
-    return df, start_of_batches
+#     # time difference on the output fields
+#     df.loc[:, output_fields+['sim_time']] = df.groupby('batch_no').apply(
+#             lambda x: x.loc[:, output_fields+['sim_time']].diff().fillna(0))
+#     return df, start_of_batches
 
 def train_test_split_to_batches(train_data, test_data, X_sel, y_sel, dims):
     batch_size = dims['batch_size']
@@ -128,10 +128,8 @@ def transform_group(group_df, max_duration, output_fields):
     """
         transform each group so that each trial have length of max_duration
     """
-    print(group_df.name)
-    #group_df = group_df.reset_index().drop('input', axis=1)
+    group_df = group_df.reset_index()
     cols = group_df.columns
-    group_df.reset_index()
 
     if max_duration - group_df.shape[0] != 0:
         padding = pd.DataFrame(np.zeros((max_duration-group_df.shape[0], group_df.shape[1]), dtype=int))
@@ -145,6 +143,7 @@ def transform_group(group_df, max_duration, output_fields):
         padded_group_df = padded_group_df.fillna(0)
     else:
         padded_group_df = group_df
+    padded_group_df = padded_group_df.drop(['input', 'timestep'], axis=1)
 
     #return padded_group_df
     return padded_group_df
@@ -153,15 +152,30 @@ def diff(df, fields):
     df.loc[:, fields] = df.loc[:, fields].diff().fillna(0)
     return df
 
+def downsample(df, start_of_batches):
+    # print(df.name)
+    # if df.name == 'l_2.9_r_2.9_2':
+    #     pdb.set_trace()
+    df = remove_bias(df, 'sim_time', start_of_batches)
+    df.loc[:, 'sim_time_del'] = pd.to_timedelta(df.loc[:, 'sim_time'].values, unit='s')
+    df = df.set_index('sim_time_del')
+
+    df = df.resample('0.2S').mean().ffill()
+    df = df.reset_index()
+
+    return df
+
 def transform(df, layers_dims, dirpath, cached=False):
     X_train_fname = os.path.join(dirpath, 'X_train.pkl')
     X_test_fname = os.path.join(dirpath, 'X_test.pkl')
-    theta_y_train_fname = os.path.join(dirpath, 'theta_y_train.pkl')
-    theta_y_test_fname = os.path.join(dirpath, 'theta_y_test.pkl')
-    pos_y_train_fname = os.path.join(dirpath, 'pos_y_train.pkl')
-    pos_y_test_fname = os.path.join(dirpath, 'pos_y_test.pkl')
-    train_traj_fname = os.path.join(dirpath, 'traj_train.pkl')
-    test_traj_fname = os.path.join(dirpath, 'traj_test.pkl')
+    y_train_fname = os.path.join(dirpath, 'y_train.pkl')
+    y_test_fname = os.path.join(dirpath, 'y_test.pkl')
+    # theta_y_train_fname = os.path.join(dirpath, 'theta_y_train.pkl')
+    # theta_y_test_fname = os.path.join(dirpath, 'theta_y_test.pkl')
+    # pos_y_train_fname = os.path.join(dirpath, 'pos_y_train.pkl')
+    # pos_y_test_fname = os.path.join(dirpath, 'pos_y_test.pkl')
+    # train_traj_fname = os.path.join(dirpath, 'traj_train.pkl')
+    # test_traj_fname = os.path.join(dirpath, 'traj_test.pkl')
     if not cached:
         df.loc[:, 'theta'] = df.loc[:, 'theta'].apply(lambda x: math.radians(x))
 
@@ -176,30 +190,32 @@ def transform(df, layers_dims, dirpath, cached=False):
 
         theta_data = df.loc[:, ['input', 'sim_time']+input_fields+output_fields+['theta']]
         theta_data.loc[:, 'theta(t-1)'] = theta_data.loc[:, 'theta'].shift(1)
+        theta_data.loc[:, 'model_pos_x(t-1)'] = theta_data.loc[:, 'model_pos_x'].shift(1)
+        theta_data.loc[:, 'model_pos_y(t-1)'] = theta_data.loc[:, 'model_pos_y'].shift(1)
 
         theta_data = label_trials(theta_data)
-
-        # group by trial name and turn trials into batches
+   
+        # group by trial name, record first entry of every batch
         grouped = theta_data.groupby('input')
         start_of_batches = grouped.first()
         num_trials = len(grouped)
+
+        # downsample
+        theta_data = theta_data.groupby('input').apply(lambda x: downsample(x, start_of_batches))
+        theta_data = theta_data.rename_axis(['input', 'timestep'])
+        theta_data = theta_data.drop('sim_time_del', axis=1)
         # store max duration of a trial
-        max_duration = max(grouped['sim_time'].count())
-        # pad sequences up to max duration length
-        theta_data = theta_data.groupby('input').apply(lambda x: transform_group(
-            x, max_duration, output_fields+['sim_time', 'theta(t-1)', 'theta']))
-        theta_data = theta_data.drop('input', axis=1)
+        max_duration = max(theta_data.groupby(['input']).size())
+        theta_data = theta_data.groupby(['input']).apply(lambda x: transform_group(x, max_duration, ['sim_time',
+            'model_pos_x(t-1)', 'model_pos_y(t-1)', 'theta(t-1)', 'theta', 'model_pos_x', 'model_pos_y']))
         encode_angle(theta_data, 'theta(t-1)')
         encode_angle(theta_data, 'theta')
 
-        target_angles = theta_data.loc[:, 'theta']
-        target_pos = theta_data.loc[:, output_fields]
-
-        theta_data = theta_data.groupby('input').apply(lambda x:
-            diff(x, ['sim_time', 'model_pos_x', 'model_pos_y']))
+        theta_data = theta_data.groupby(['input']).apply(lambda x:
+            diff(x, ['sim_time']))
 
         # save ground truth trajectory
-        traj_data = pd.concat((target_pos, target_angles), axis=1).copy()        
+        # traj_data = pd.concat((target_pos, target_angles), axis=1).copy()        
         # theta_data = theta_data.iloc[1:]
         #plot_target_angles(np.expand_dims(theta_data.loc[:, 'theta'].values.reshape(-1, 1), axis=0))
         
@@ -207,25 +223,27 @@ def transform(df, layers_dims, dirpath, cached=False):
 
         # to debug
         # theta_data = theta_data.iloc[:1000]
-        # pdb.set_trace()
 
         n_train = int(num_trials*0.7)*max_duration
         train_data = theta_data.iloc[:n_train]
         test_data = theta_data.iloc[n_train:]
-        train_traj_data = traj_data.iloc[:n_train]
-        test_traj_data = traj_data.iloc[n_train:]
-
-        pdb.set_trace()
-        train_traj_data = train_traj_data.groupby('input').apply(lambda x: remove_bias(x, output_fields, start_of_batches))
-        test_traj_data = test_traj_data.groupby('input').apply(lambda x: remove_bias(x, output_fields, start_of_batches))
-        pdb.set_trace()
-        X_sel = ['sim_time', 'left_pwm', 'right_pwm', 'theta(t-1)_cos', 'theta(t-1)_sin']
-        y_sel = ['theta_cos', 'theta_sin', 'model_pos_x', 'model_pos_y']
+        # train_traj_data = traj_data.iloc[:n_train]
+        # test_traj_data = traj_data.iloc[n_train:]
+        
+        X_sel = ['sim_time', 'left_pwm', 'right_pwm', 'model_pos_x(t-1)', 'model_pos_y(t-1)', 'theta(t-1)_cos', 'theta(t-1)_sin']
+        y_sel = ['model_pos_x', 'model_pos_y', 'theta_cos', 'theta_sin']
         X_train = train_data.loc[:, X_sel]
         y_train = train_data.loc[:, y_sel]
         X_test = test_data.loc[:, X_sel]
         y_test = test_data.loc[:, y_sel]
+        # pdb.set_trace()
 
+        trian_start_of_batches = y_train.groupby('input').first()
+        test_start_of_batches = y_test.groupby('input').first()
+        y_train = y_train.groupby('input').apply(lambda x: remove_bias(x, output_fields, trian_start_of_batches))
+        y_test = y_test.groupby('input').apply(lambda x: remove_bias(x, output_fields, test_start_of_batches))
+
+        # pdb.set_trace()
         p = layers_dims[0]
         J = layers_dims[-1]
 
@@ -233,21 +251,23 @@ def transform(df, layers_dims, dirpath, cached=False):
         X_test = trim_to_mult_of(X_test, max_duration)
         y_train = trim_to_mult_of(y_train, max_duration)
         y_test = trim_to_mult_of(y_test, max_duration)
-        train_traj_data = trim_to_mult_of(train_traj_data, max_duration)
-        test_traj_data = trim_to_mult_of(test_traj_data, max_duration)
+        # train_traj_data = trim_to_mult_of(train_traj_data, max_duration)
+        # test_traj_data = trim_to_mult_of(test_traj_data, max_duration)
 
         X_train.to_pickle(X_train_fname)
         X_test.to_pickle(X_test_fname)
-        theta_y_train = y_train.loc[:, y_sel[:2]]
-        theta_y_train.to_pickle(theta_y_train_fname)
-        pos_y_train = y_train.loc[:, y_sel[2:]]
-        pos_y_train.to_pickle(pos_y_train_fname)
-        theta_y_test = y_test.loc[:, y_sel[:2]]
-        theta_y_test.to_pickle(theta_y_test_fname)
-        pos_y_test = y_test.loc[:, y_sel[2:]]
-        pos_y_test.to_pickle(pos_y_test_fname)
-        train_traj_data.to_pickle(train_traj_fname)
-        test_traj_data.to_pickle(test_traj_fname)
+        y_train.to_pickle(y_train_fname)
+        y_test.to_pickle(y_test_fname)
+        # theta_y_train = y_train.loc[:, y_sel[:2]]
+        # theta_y_train.to_pickle(theta_y_train_fname)
+        # pos_y_train = y_train.loc[:, y_sel[2:]]
+        # pos_y_train.to_pickle(pos_y_train_fname)
+        # theta_y_test = y_test.loc[:, y_sel[:2]]
+        # theta_y_test.to_pickle(theta_y_test_fname)
+        # pos_y_test = y_test.loc[:, y_sel[2:]]
+        # pos_y_test.to_pickle(pos_y_test_fname)
+        # train_traj_data.to_pickle(train_traj_fname)
+        # test_traj_data.to_pickle(test_traj_fname)
 
         # pdb.set_trace()
         print('number of trials in train: %d' % (len(X_train)/max_duration))
@@ -263,11 +283,13 @@ def transform(df, layers_dims, dirpath, cached=False):
     else:
         X_train = pd.read_pickle(X_train_fname)
         X_test = pd.read_pickle(X_test_fname)
-        theta_y_train = pd.read_pickle(theta_y_train_fname)
-        pos_y_train = pd.read_pickle(pos_y_train_fname)
-        theta_y_test = pd.read_pickle(theta_y_test_fname)
-        pos_y_test = pd.read_pickle(pos_y_test_fname)
+        y_train = pd.read_pickle(y_train_fname)
+        y_test = pd.read_pickle(y_test_fname)
+        # theta_y_train = pd.read_pickle(theta_y_train_fname)
+        # pos_y_train = pd.read_pickle(pos_y_train_fname)
+        # theta_y_test = pd.read_pickle(theta_y_test_fname)
+        # pos_y_test = pd.read_pickle(pos_y_test_fname)
 
         data_info = load_obj(dirpath, 'data_info')
     
-    return (X_train, X_test, theta_y_train, pos_y_train, theta_y_test, pos_y_test, data_info['timestep'])
+    return (X_train, X_test, y_train, y_test, data_info['timestep'])
