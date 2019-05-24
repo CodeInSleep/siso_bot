@@ -7,15 +7,15 @@ import pandas as pd
 import pdb
 from numpy import cos, sin, arctan2
 import matplotlib.pyplot as plt
-
+from sklearn.externals import joblib
 from transform import transform
 from visualize import visualize_3D
-from utils import decode_angles, plot_target_angles, save_model, angle_dist, make_model, load_model, load_obj
+from utils import decode_angles, plot_target_angles, save_model, angle_dist, make_model, load_model, load_obj, convert_to_inference_model
 
 input_fields = ['left_pwm', 'right_pwm']
 
-layers_dims = [7, 10, 20, 4]
-fname = 'trial_1000_0_to_3.csv'
+layers_dims = [5, 10, 20, 4]
+fname = 'real_robot_data.csv'
 model_fname = 'multi_step_mimo_model'
 
 fields = ['input', 'sim_time', 'left_pwm', 'right_pwm',
@@ -31,24 +31,24 @@ def predict_seq(model, X, initial_state):
     current_y = initial_state[1]
     current_theta = initial_state[2]
 
+    print('initial_state: ', initial_state)
+
     trajectory = []
 
     for i in range(len(X)):
         encoded_theta = np.array([np.cos(current_theta), np.sin(current_theta)])
-        pos_X = np.append(X[i], current_theta).reshape(1, -1)
+        _X = np.append(X[i], [encoded_theta[0], encoded_theta[1]]).reshape(1, -1)
 
-        theta_X = np.expand_dims(np.append(X[i], encoded_theta).reshape(1, -1), axis=0)
+        prediction = model.predict(np.expand_dims(_X, axis=0)).ravel()
 
-        pos_prediction = xy_model.predict(pos_X).ravel()
-        theta_prediction = theta_model.predict(theta_X).ravel()
+        current_x += prediction[0]
+        current_y += prediction[1]
 
-        current_x += pos_prediction[0]
-        current_y += pos_prediction[1]
-
-        current_theta = decode_angles(theta_prediction.reshape(1, -1)).ravel()[0]
+        current_theta = decode_angles(prediction[2:].reshape(1, -1)).ravel()[0]
 
         trajectory.append(np.array([current_x, current_y, current_theta]))
 
+    print('trajectory: ', trajectory[:10])
     return np.array(trajectory)
 
 def plot_example(gnd_truth, predictions, n):
@@ -70,6 +70,21 @@ def plot_example(gnd_truth, predictions, n):
     plt.title('test example {}'.format(n))
     plt.show()
 
+def plot_trajectories(pred_traj, gnd_traj):
+    fig = plt.figure()
+    ax1 = fig.add_subplot(121)
+    ax2 = fig.add_subplot(122)
+
+    ax1.set_title('trajectories')
+    ax1.set_xlabel('x')
+    ax1.set_ylabel('y')
+    visualize_3D(np.expand_dims(pred_traj, axis=0), ax1, plt_arrow=True)
+    visualize_3D(np.expand_dims(gnd_traj, axis=0), ax1, plt_arrow=True)
+    ax1.legend(['predicted', 'ground truth'])
+    
+    plt.draw()
+    plt.show()
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Get path to data directory')
     parser.add_argument('--datadir', required=True)
@@ -86,10 +101,9 @@ if __name__ == '__main__':
 
     p = layers_dims[0]
     J = layers_dims[-1]
-    X_train, X_test, y_train, y_test, timestep = transform(df, layers_dims, dirpath, cached=True)
-    pdb.set_trace()
-
+    X_train, X_test, y_train, y_test, timestep = transform(df, layers_dims, dirpath, cached=False)
     # X columns: ['sim_time', 'left_pwm', 'right_pwm', 'model_pos_x(t-1)', 'model_pos_y(t-1)', 'theta(t-1)_cos', 'theta(t-1)_sin']
+    pdb.set_trace()
     X_train = X_train.values.reshape(
         -1, timestep, p)
     X_test = X_test.values.reshape(
@@ -100,9 +114,9 @@ if __name__ == '__main__':
                 -1, timestep, J)
 
     num_batches = 16
-    model = make_model(num_batches, timestep, layers_dims, lr=1e-4)
+    model = make_model(num_batches, timestep, layers_dims)
    
-    iterations = 20
+    iterations = 10
     epochs = 30
     # learning curver
     train_loss_history = []
@@ -111,7 +125,7 @@ if __name__ == '__main__':
     # decoded_y_train = decode_angles(y_train)
     # y_test = decode_angles(y_test)
     
-    model_cached = True
+    model_cached = False
     train_trial_names = load_obj(dirpath, 'train_trial_names')
     test_trial_names = load_obj(dirpath, 'test_trial_names')
 
@@ -119,19 +133,28 @@ if __name__ == '__main__':
         print('train_trial_names: ', [(idx, name) for idx, name in enumerate(train_trial_names)])
         print('test_trial_names: ', [(idx, name) for idx, name in enumerate(test_trial_names)])
         model = load_model(dirpath, model_fname)
+        model = convert_to_inference_model(model)
+        input_scaler = joblib.load(os.path.join(dirpath, 'input_scaler.pkl'))
 
-        train_predictions = model.predict(X_train)
-        test_predictions = model.predict(X_test)
+        x_sel = ['sim_time', 'left_pwm', 'right_pwm']
+        y_sel = ['model_pos_x', 'model_pos_y', 'theta']
+        start = 400
+        finish = 410
+        X = df.iloc[start: finish].loc[:, x_sel]
+        y = df.iloc[start: finish].loc[:, y_sel]
 
-        pdb.set_trace()
-        # for idx in [434, 448, 449, 433, 201, 192, 118]:
-        #     plot_example(y_train, train_predictions, idx)
+        X.loc[:, 'sim_time'] = X.loc[:, 'sim_time'].diff().fillna(0)
+        X.loc[:, ['left_pwm', 'right_pwm']] = input_scaler.transform(X.loc[:, ['left_pwm', 'right_pwm']])
+        y.loc[:, 'theta'] = y.loc[:, 'theta']*np.pi/180
 
-        for idx in [257, 243, 192, 191, 188, 114, 121]:
-            plot_example(y_test, test_predictions, idx)
+        X = X.values
+        y = y.values
+
+        predictions = predict_seq(model, X, y[0])
+        plot_trajectories(predictions, y)
 
     for it in range(iterations):
-        # print("iteration %d" % it)
+        print("iteration %d" % it)
         if not model_cached:
             model.fit(X_train, y_train, epochs=epochs, batch_size=num_batches, verbose=1, shuffle=False)
             # for j in range(int(train_bl/time_step)-1):
@@ -182,6 +205,9 @@ if __name__ == '__main__':
 
             test_rmse = np.sqrt(np.mean(np.array(test_se))/timestep)
             test_loss_history.append(test_rmse)
+
+            print('train_rmse: ', train_rmse)
+            print('test_rmse: ', test_rmse)
 
     
     if not model_cached:
