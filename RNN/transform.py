@@ -153,14 +153,15 @@ def diff(df, fields):
     df.loc[:, fields] = df.loc[:, fields].diff().fillna(0)
     return df
 
-def downsample(df, start_of_batches):
+def downsample(df, rate='0.1S', start_of_batches=None):
     # print(df.name)
     # if df.name == 'l_2.9_r_2.9_2':
-    df = remove_bias(df, 'sim_time', start_of_batches)
+    if start_of_batches is not None:
+        df = remove_bias(df, 'sim_time', start_of_batches)
     df.loc[:, 'sim_time_del'] = pd.to_timedelta(df.loc[:, 'sim_time'].values, unit='s')
     df = df.set_index('sim_time_del')
 
-    df = df.resample('0.5S').mean().ffill()
+    df = df.resample(rate).mean().ffill()
     df = df.reset_index()
 
     return df
@@ -177,8 +178,14 @@ def transform(df, layers_dims, dirpath, cached=False):
         df.loc[:, 'left_pwm'] = df.loc[:, 'left_pwm'].apply(truncate, args=(3,))
         df.loc[:, 'right_pwm'] = df.loc[:, 'right_pwm'].apply(truncate, args=(3,))
 
+        # make xy in mm
+        df.loc[:, 'model_pos_x'] = df.loc[:, 'model_pos_x']*1000
+        df.loc[:, 'model_pos_x'] = df.loc[:, 'model_pos_x'].apply(truncate, args=(3,))
+        df.loc[:, 'model_pos_y'] = df.loc[:, 'model_pos_y']*1000
+        df.loc[:, 'model_pos_y'] = df.loc[:, 'model_pos_y'].apply(truncate, args=(3,))
         df.loc[:, 'input'] = 'l_'+df.loc[:, 'left_pwm'].map(str)+'_r_'+df.loc[:, 'right_pwm'].map(str)
 
+        print('Normalizing Inputs...')
         # normalize inputs
         input_scaler = MinMaxScaler(feature_range=(0, 1))
         df.loc[:,input_fields] = input_scaler.fit_transform(df.loc[:,input_fields])
@@ -188,6 +195,7 @@ def transform(df, layers_dims, dirpath, cached=False):
         # theta_data.loc[:, 'model_pos_x(t-1)'] = theta_data.loc[:, 'model_pos_x'].shift(1)
         # theta_data.loc[:, 'model_pos_y(t-1)'] = theta_data.loc[:, 'model_pos_y'].shift(1)
 
+        print('Labeling Trials...')
         theta_data = label_trials(theta_data)
    
         # group by trial name, record first entry of every batch
@@ -195,12 +203,13 @@ def transform(df, layers_dims, dirpath, cached=False):
         start_of_batches = grouped.first()
         num_trials = len(grouped)
 
-        pdb.set_trace()
-
+        print('Downsampling and diffing sim_time...')
         # downsample
-        theta_data = theta_data.groupby('input').apply(lambda x: downsample(x, start_of_batches))
+        theta_data = theta_data.groupby('input').apply(lambda x: downsample(x, rate='0.2S', start_of_batches=start_of_batches))
         theta_data = theta_data.rename_axis(['input', 'timestep'])
         theta_data = theta_data.drop('sim_time_del', axis=1)
+        # drop the stationary trial
+        # theta_data = theta_data.drop('l_90.0_r_90.0_1', axis=0)
         # store max duration of a trial
         max_duration = max(theta_data.groupby(['input']).size())
         # take difference in time
@@ -208,12 +217,14 @@ def transform(df, layers_dims, dirpath, cached=False):
             diff(x, ['sim_time']))
         start_states = theta_data.groupby('input').first()
     
+        print('Removing Biases and Encoding Angles...')
         # remove bias the output_fields bias of each batch
         theta_data = theta_data.groupby('input').apply(lambda x: remove_bias(x, output_fields, start_states))
         encode_angle(theta_data, 'theta(t-1)')
         encode_angle(theta_data, 'theta')
         theta_data.loc[:, output_fields] = theta_data.groupby('input').apply(lambda x: x.loc[:, output_fields].diff().fillna(0))
 
+        print('Extending groups to max len...')
         theta_data = theta_data.groupby(['input']).apply(lambda x: extend_group(x, max_duration))
         
         n_train = int(num_trials*0.7)
@@ -249,7 +260,7 @@ def transform(df, layers_dims, dirpath, cached=False):
 
         print('number of trials in train: %d' % (len(X_train)/max_duration))
         print('number of trials in test: %d' % (len(X_test)/max_duration))
-        
+        print('max_duration: %d' % max_duration)
         data_info = {
             'timestep': max_duration,
             'num_trials': num_trials,
