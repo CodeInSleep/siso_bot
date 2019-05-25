@@ -21,7 +21,7 @@ input_fields = ['left_pwm', 'right_pwm']
 
 layers_dims = [3, 10, 10, 2]
 batch_size = 32
-time_step = 200
+time_step = 5
 fname = 'trial_1000.csv'
 def encode_angle(df, theta_field):
     df.loc[:, theta_field+'_cos'] = df.loc[:, theta_field].apply(lambda x: cos(x))
@@ -113,7 +113,7 @@ if __name__ == '__main__':
    
     model = make_model()
    
-    iterations = 300
+    iterations = 50
     # learning curver
     train_loss_history = []
     test_loss_history = []
@@ -163,6 +163,13 @@ if __name__ == '__main__':
                             axis=1))
                 test_se_over_timestep.append(diff**2)
             test_se.append(test_se_over_timestep)
+            # plt.plot(train_loss_history)
+            # plt.plot(test_loss_history)
+            # plt.xlabel('epoch')
+            # plt.ylabel('RMSE theta(rad)')
+            # plt.draw()
+            # plt.pause(0.0001)
+            # plt.clf()
         model.reset_states()
 
         test_rmse = np.sqrt(np.mean(test_se))
