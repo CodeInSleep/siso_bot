@@ -125,7 +125,7 @@ def label_trials(df):
     df.loc[end:, 'input'] = current_trial_name + '_' + str(trial_idx)
     return df
 
-def extend_group(group_df, max_duration):
+def extend_group(group_df, max_duration, extend_fields):
     """
         extend each group so that each trial have length of max_duration
     """
@@ -136,7 +136,7 @@ def extend_group(group_df, max_duration):
         padding = pd.DataFrame(np.zeros((max_duration-group_df.shape[0], group_df.shape[1]), dtype=int))
         padding.columns = cols
         
-        # padding.loc[:, output_fields] = np.repeat(group_df.iloc[group_df.shape[0]-1].loc[output_fields].values.reshape(-1, 1), len(padding), axis=1).T
+        padding.loc[:, extend_fields] = np.repeat(group_df.iloc[group_df.shape[0]-1].loc[extend_fields].values.reshape(-1, 1), len(padding), axis=1).T
     
         # pad the time series with
         padded_group_df = pd.DataFrame(pd.np.row_stack([group_df, padding]))
@@ -217,15 +217,16 @@ def transform(df, layers_dims, dirpath, cached=False):
             diff(x, ['sim_time']))
         start_states = theta_data.groupby('input').first()
     
-        print('Removing Biases and Encoding Angles...')
+        print('Removing Biases and Difference position...')
         # remove bias the output_fields bias of each batch
         theta_data = theta_data.groupby('input').apply(lambda x: remove_bias(x, output_fields, start_states))
-        encode_angle(theta_data, 'theta(t-1)')
-        encode_angle(theta_data, 'theta')
         theta_data.loc[:, output_fields] = theta_data.groupby('input').apply(lambda x: x.loc[:, output_fields].diff().fillna(0))
 
-        print('Extending groups to max len...')
-        theta_data = theta_data.groupby(['input']).apply(lambda x: extend_group(x, max_duration))
+        print('Extending groups to max len and encoding angle...')
+        theta_data = theta_data.groupby(['input']).apply(lambda x: extend_group(x, max_duration,
+            ['theta(t-1)', 'theta', 'model_pos_x', 'model_pos_y']))
+        encode_angle(theta_data, 'theta(t-1)')
+        encode_angle(theta_data, 'theta')
         
         n_train = int(num_trials*0.7)
         trial_names = start_of_batches.index.to_list()
