@@ -8,24 +8,27 @@ import pdb
 from numpy import cos, sin, arctan2
 import matplotlib.pyplot as plt
 from sklearn.externals import joblib
-from transform import transform
+from transform import transform, downsample, truncate
 from visualize import visualize_3D
 from utils import decode_angles, plot_target_angles, save_model, angle_dist, make_model, load_model, load_obj, convert_to_inference_model
 
 input_fields = ['left_pwm', 'right_pwm']
 
 layers_dims = [5, 10, 20, 4]
-fname = 'real_robot_data.csv'
-model_fname = 'multi_step_mimo_model'
 
 fields = ['input', 'sim_time', 'left_pwm', 'right_pwm',
         'theta_cos', 'theta_sin']
+
+data_cached = True
+model_cached = False
+fname = 'trial_1000_0_to_3.csv'
+model_fname = fname.split('.')[0]+'_model'
 
 def encode_angle(df, theta_field):
     df.loc[:, theta_field+'_cos'] = df.loc[:, theta_field].apply(lambda x: cos(x))
     df.loc[:, theta_field+'_sin'] = df.loc[:, theta_field].apply(lambda x: sin(x))
 
-def predict_seq(model, X, initial_state):
+def predict_seq(model, X, initial_state, start, gnd_truth=None):
     # X is a 2D sequence of input features
     current_x = initial_state[0]
     current_y = initial_state[1]
@@ -36,20 +39,26 @@ def predict_seq(model, X, initial_state):
     trajectory = []
 
     for i in range(len(X)):
-        encoded_theta = np.array([np.cos(current_theta), np.sin(current_theta)])
-        _X = np.append(X[i], [encoded_theta[0], encoded_theta[1]]).reshape(1, -1)
+        if gnd_truth is None:
+            encoded_theta = np.array([np.cos(current_theta), np.sin(current_theta)])
+            _X = np.append(X[i], [encoded_theta[0], encoded_theta[1]]).reshape(1, -1)
+        else:
+            #parallels series
+            encoded_theta = np.array([np.cos(y[i, 2]), np.sin(y[i, 2])])
+            _X = np.append(X[i], encoded_theta).reshape(1, -1)
 
         prediction = model.predict(np.expand_dims(_X, axis=0)).ravel()
 
-        current_x += prediction[0]
-        current_y += prediction[1]
+        if i >= start:
+            current_x += prediction[0]
+            current_y += prediction[1]
 
-        current_theta = decode_angles(prediction[2:].reshape(1, -1)).ravel()[0]
+            current_theta = decode_angles(prediction[2:].reshape(1, -1)).ravel()[0]
 
-        trajectory.append(np.array([current_x, current_y, current_theta]))
+            trajectory.append(np.array([current_x, current_y, current_theta]))
 
-    print('trajectory: ', trajectory[:10])
-    return np.array(trajectory)
+    trajectory = np.array(trajectory)
+    return trajectory
 
 def plot_example(gnd_truth, predictions, n):
     fig = plt.figure()
@@ -98,10 +107,12 @@ if __name__ == '__main__':
     print('dirpath: ', dirpath)
     datafile = os.path.join(dirpath, fname)
     df = pd.read_csv(datafile, engine='python')
+    # for trial 2000
+    # df = df.drop(['blank1', 'blank2'], axis=1)
 
     p = layers_dims[0]
     J = layers_dims[-1]
-    X_train, X_test, y_train, y_test, timestep = transform(df, layers_dims, dirpath, cached=False)
+    X_train, X_test, y_train, y_test, timestep = transform(df, layers_dims, dirpath, cached=data_cached)
     # X columns: ['sim_time', 'left_pwm', 'right_pwm', 'model_pos_x(t-1)', 'model_pos_y(t-1)', 'theta(t-1)_cos', 'theta(t-1)_sin']
     pdb.set_trace()
     X_train = X_train.values.reshape(
@@ -116,7 +127,7 @@ if __name__ == '__main__':
     num_batches = 16
     model = make_model(num_batches, timestep, layers_dims)
    
-    iterations = 10
+    iterations = 30
     epochs = 30
     # learning curver
     train_loss_history = []
@@ -125,11 +136,17 @@ if __name__ == '__main__':
     # decoded_y_train = decode_angles(y_train)
     # y_test = decode_angles(y_test)
     
-    model_cached = False
     train_trial_names = load_obj(dirpath, 'train_trial_names')
     test_trial_names = load_obj(dirpath, 'test_trial_names')
 
     if model_cached:
+        testfile = os.path.join(dirpath, fname)
+        testrun = pd.read_csv(testfile, engine='python')
+        # TODO: refractor
+        testrun.loc[:, 'model_pos_x'] = testrun.loc[:, 'model_pos_x']*1000
+        testrun.loc[:, 'model_pos_x'] = testrun.loc[:, 'model_pos_x'].apply(truncate, args=(3,))
+        testrun.loc[:, 'model_pos_y'] = testrun.loc[:, 'model_pos_y']*1000
+        testrun.loc[:, 'model_pos_y'] = testrun.loc[:, 'model_pos_y'].apply(truncate, args=(3,))
         print('train_trial_names: ', [(idx, name) for idx, name in enumerate(train_trial_names)])
         print('test_trial_names: ', [(idx, name) for idx, name in enumerate(test_trial_names)])
         model = load_model(dirpath, model_fname)
@@ -138,20 +155,26 @@ if __name__ == '__main__':
 
         x_sel = ['sim_time', 'left_pwm', 'right_pwm']
         y_sel = ['model_pos_x', 'model_pos_y', 'theta']
-        start = 400
-        finish = 410
-        X = df.iloc[start: finish].loc[:, x_sel]
-        y = df.iloc[start: finish].loc[:, y_sel]
+        start = 300
+        finish = 400
+        _testrun = downsample(testrun, rate='0.2S')
+        testrun_X = _testrun.iloc[start: finish].loc[:, x_sel]
+        testrun_y = _testrun.iloc[start: finish].loc[:, y_sel]
 
-        X.loc[:, 'sim_time'] = X.loc[:, 'sim_time'].diff().fillna(0)
-        X.loc[:, ['left_pwm', 'right_pwm']] = input_scaler.transform(X.loc[:, ['left_pwm', 'right_pwm']])
-        y.loc[:, 'theta'] = y.loc[:, 'theta']*np.pi/180
+        # X = X.loc[:, x_sel]
+        # y = X.loc[:, y_sel]
+        
+        testrun_X.loc[:, 'sim_time'] = X.loc[:, 'sim_time'].diff().fillna(0)
+        testrun_X.loc[:, ['left_pwm', 'right_pwm']] = input_scaler.transform(X.loc[:, ['left_pwm', 'right_pwm']])
+        testrun_y.loc[:, 'theta'] = y.loc[:, 'theta']*np.pi/180
+        testrun_X = testrun_X.values
+        testrun_y = testrun_y.values
 
-        X = X.values
-        y = y.values
+        pdb.set_trace()
 
-        predictions = predict_seq(model, X, y[0])
-        plot_trajectories(predictions, y)
+        start = 5
+        predictions = predict_seq(model, testrun_X, testrun_y[start], start)
+        plot_trajectories(predictions, testrun_y[start:])
 
     for it in range(iterations):
         print("iteration %d" % it)
@@ -179,7 +202,7 @@ if __name__ == '__main__':
 
                 diff = np.sum(np.apply_along_axis(angle_dist, 1, \
                     np.concatenate((pred[:, 2].reshape(-1, 1), gnd_truth[:, 2].reshape(-1, 1)), axis=1))**2)
-                diff += np.sum((pred[:, :2] - gnd_truth[:, :2])**2)
+                # diff += np.sum((pred[:, :2] - gnd_truth[:, :2])**2)
                 train_se.append(diff)
 
             train_rmse = np.sqrt(np.mean(np.array(train_se))/timestep)
@@ -200,7 +223,7 @@ if __name__ == '__main__':
 
                 diff = np.sum(np.apply_along_axis(angle_dist, 1, \
                     np.concatenate((pred[:, 2].reshape(-1, 1), gnd_truth[:, 2].reshape(-1, 1)), axis=1))**2)
-                diff += np.sum((pred[:, :2] - gnd_truth[:, :2])**2)
+                # diff += np.sum((pred[:, :2] - gnd_truth[:, :2])**2)
                 test_se.append(diff)
 
             test_rmse = np.sqrt(np.mean(np.array(test_se))/timestep)
