@@ -51,6 +51,9 @@ def remove_bias(df, fields, start_states):
     df.loc[:, fields] =  df.loc[:, fields] - start_states.loc[df.name, fields]
     return df
 
+def scale(df, fields, factor):
+    df.loc[:, fields] = df.loc[:, fields]*factor
+    return df
 # def remove_bias_in_batches(df, batch_size):
 #     # assign batch numbers to group by
 #     df.loc[:, 'batch_no'] = df.index//batch_size
@@ -179,10 +182,7 @@ def transform(df, layers_dims, dirpath, cached=False):
         df.loc[:, 'right_pwm'] = df.loc[:, 'right_pwm'].apply(truncate, args=(3,))
 
         # make xy in mm
-        df.loc[:, 'model_pos_x'] = df.loc[:, 'model_pos_x']*1000
-        df.loc[:, 'model_pos_x'] = df.loc[:, 'model_pos_x'].apply(truncate, args=(3,))
-        df.loc[:, 'model_pos_y'] = df.loc[:, 'model_pos_y']*1000
-        df.loc[:, 'model_pos_y'] = df.loc[:, 'model_pos_y'].apply(truncate, args=(3,))
+        df = scale(df, ['model_pos_x', 'model_pos_x'], 1000)
         df.loc[:, 'input'] = 'l_'+df.loc[:, 'left_pwm'].map(str)+'_r_'+df.loc[:, 'right_pwm'].map(str)
 
         print('Normalizing Inputs...')
@@ -224,7 +224,7 @@ def transform(df, layers_dims, dirpath, cached=False):
 
         print('Extending groups to max len and encoding angle...')
         theta_data = theta_data.groupby(['input']).apply(lambda x: extend_group(x, max_duration,
-            ['theta(t-1)', 'theta', 'model_pos_x', 'model_pos_y']))
+            ['theta(t-1)', 'theta']))
         encode_angle(theta_data, 'theta(t-1)')
         encode_angle(theta_data, 'theta')
         
