@@ -4,96 +4,29 @@ import argparse
 import math
 import numpy as np
 import pandas as pd
+import pdb
 from numpy import cos, sin, arctan2
-from sklearn.preprocessing import MinMaxScaler
-from keras.models import Sequential, model_from_json
-from keras.layers import Dense, Dropout, LSTM, SimpleRNN, Dropout, GRU
-from keras.optimizers import Adam
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
-from transform import truncate, difference
-from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
-from transform import trim_to_batch_size 
-import pdb
+from transform import transform
+from visualize import visualize_3D
+from utils import decode_angles, plot_target_angles, save_obj, make_model, save_model, angle_dist
+
 input_fields = ['left_pwm', 'right_pwm']
 
-layers_dims = [3, 10, 10, 2]
-batch_size = 32
-time_step = 5
-fname = 'trial_1000.csv'
+layers_dims = [5, 10, 20, 2]
+fname = 'trial_1000_0_to_3.csv'
+
+####
+# Issues:
+#   - For batch_size = 32, the size of each 
+fields = ['input', 'sim_time', 'left_pwm', 'right_pwm',
+        'theta_cos', 'theta_sin']
+###
+
 def encode_angle(df, theta_field):
     df.loc[:, theta_field+'_cos'] = df.loc[:, theta_field].apply(lambda x: cos(x))
     df.loc[:, theta_field+'_sin'] = df.loc[:, theta_field].apply(lambda x: sin(x))
-
-def decode_angles(cos_sin_vals):
-    return arctan2(cos_sin_vals[:, 1], cos_sin_vals[:, 0]).reshape(-1, 1)
-
-def transform(df):
-    df.loc[:, 'theta'] = df.loc[:, 'theta'].apply(lambda x: math.radians(x))
-    df.loc[:, 'left_pwm'] = df.loc[:, 'left_pwm'].apply(truncate, args=(3,))
-    df.loc[:, 'right_pwm'] = df.loc[:, 'right_pwm'].apply(truncate, args=(3,))
-    df.loc[:, 'input'] = 'l_'+df.loc[:, 'left_pwm'].map(str)+'_r_'+df.loc[:, 'right_pwm'].map(str)
-
-    # normalize inputs
-    input_scaler = MinMaxScaler(feature_range=(0, 1))
-    df.loc[:,input_fields] = input_scaler.fit_transform(df.loc[:,input_fields])
-
-    theta_data = df.loc[:, ['sim_time']+input_fields+['theta']]
-    theta_data.loc[:, 'sim_time'] = theta_data.loc[:, 'sim_time'].diff().fillna(0)
-    theta_data = theta_data.iloc[:-1]
-    encode_angle(theta_data, 'theta')
-    theta_data = theta_data.drop('theta', axis=1)
-    theta_data = theta_data.reindex(columns=['sim_time', 'left_pwm', 'right_pwm',
-        'theta_cos', 'theta_sin'])
-
-    X_train, X_test, y_train, y_test = train_test_split(theta_data.loc[:, ['sim_time', 'left_pwm', 'right_pwm']], theta_data.loc[:, ['theta_cos', 'theta_sin']], test_size=0.3, random_state = 7)
-    
-    p = layers_dims[0]
-    J = layers_dims[-1]
-
-    X_train = trim_to_batch_size(X_train, batch_size)
-    X_test = trim_to_batch_size(X_test, batch_size)
-    y_train = trim_to_batch_size(y_train, batch_size)
-    y_test = trim_to_batch_size(y_test, batch_size)
-
-    train_batch_len = int(len(X_train)/batch_size)
-    test_batch_len = int(len(X_test)/batch_size)
-    
-    X_train = X_train.values.reshape(
-            batch_size, train_batch_len, p)
-    X_test = X_test.values.reshape(
-            batch_size, test_batch_len, p)
-    y_train = y_train.values.reshape(
-            batch_size, train_batch_len, J)
-    y_test = y_test.values.reshape(
-            batch_size, test_batch_len, J)
-
-    return (X_train, X_test, y_train, y_test, train_batch_len, test_batch_len)
-
-def make_model():
-    model = Sequential()
-
-    model.add(Dense(layers_dims[1], batch_input_shape=(batch_size, time_step, layers_dims[0]),
-        activation='tanh'))
-    model.add(Dropout(0.3))
-    model.add(Dense(layers_dims[1], activation='tanh'))
-    model.add(Dropout(0.3))
-    model.add(GRU(layers_dims[2], activation='tanh', return_sequences=True, stateful=True))
-    model.add(Dense(layers_dims[3]))
-
-    optimizer = Adam(lr=1e-4)
-    model.compile(loss='mean_squared_error', optimizer=optimizer)
-
-    return model
-
-def angle_dist(angles):
-    ang1 = math.degrees(angles[0])
-    ang2 = math.degrees(angles[1])
-    
-    a = ang1 - ang2
-    return np.radians(np.abs((a+180)%360-180))
     
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Get path to data directory')
@@ -109,83 +42,113 @@ if __name__ == '__main__':
     datafile = os.path.join(dirpath, fname)
     df = pd.read_csv(datafile, engine='python')
 
-    X_train, X_test, y_train, y_test, train_batch_len, test_batch_len = transform(df)
+    p = layers_dims[0]
+    J = layers_dims[-1]
+    X_train, X_test, theta_y_train, _, theta_y_test, _, timestep = transform(df, layers_dims, dirpath, cached=False)
+    X_train = X_train.values.reshape(
+        -1, timestep, p)
+    X_test = X_test.values.reshape(
+            -1, timestep, p)
+    theta_y_train = theta_y_train.values.reshape(
+            -1, timestep, J)
+    theta_y_test = theta_y_test.values.reshape(
+                -1, timestep, J)
+
+    num_batches = 16
+    theta_model = make_model(num_batches, timestep, layers_dims)
    
-    model = make_model()
-   
-    iterations = 50
+    iterations = 10
+    epochs = 30
     # learning curver
     train_loss_history = []
     test_loss_history = []
-  
+    
     # decoded_y_train = decode_angles(y_train)
     # y_test = decode_angles(y_test)
     for it in range(iterations):
         print("iteration %d" % it)
-        for j in range(int(train_batch_len/time_step)-1):
-            time_seg = range((j*time_step), ((j+1)*time_step))
-            model.fit(X_train[:, time_seg, :], y_train[:, time_seg, :], 
-                    batch_size=batch_size, verbose=1, shuffle=False)
-
-        model.reset_states()
+        theta_model.fit(X_train, theta_y_train, epochs=epochs, batch_size=num_batches, verbose=1, shuffle=False)
+        # for j in range(int(train_bl/time_step)-1):
+        #     time_seg = range((j*time_step), ((j+1)*time_step))
+        #     model.fit(X_train[:, time_seg, :], y_train[:, time_seg, :], 
+        #             batch_size=num_batches, verbose=1, shuffle=False)
+        # model.reset_states()
 
         # calculate rmse for train data
         train_se = []
-        for j in range(int(train_batch_len/time_step)-1):
-            time_seg = range((j*time_step), ((j+1)*time_step))
-            pred = model.predict(X_train[:, time_seg, :])
+        # for j in range(int(train_bl/time_step)-1):
+        #     time_seg = range((j*time_step), ((j+1)*time_step))
+        #     pred = model.predict(X_train[:, time_seg, :])
 
-            train_se_over_timestep = []
-            for k in range(batch_size):
-                _pred = decode_angles(pred[k])
-                _gnd_truth = decode_angles(y_train[k, time_seg, :])
+        #     train_se_over_timestep = []
+        #     for k in range(num_batches):
+        #         _pred = decode_angles(pred[k])
+        #         _gnd_truth = decode_angles(y_train[k, time_seg, :])
                 
-                #pdb.set_trace()
-                diff = np.apply_along_axis(angle_dist, 1,
-                        np.concatenate((_pred, _gnd_truth), axis=1))
-                train_se_over_timestep.append(diff**2)
-            train_se.append(train_se_over_timestep)
-        model.reset_states()
-        train_rmse = np.sqrt(np.mean(train_se))
+        #         diff = np.apply_along_axis(angle_dist, 1,
+        #                 np.concatenate((_pred, _gnd_truth), axis=1))
+        #         train_se_over_timestep.append(diff**2)
+        #     train_se.append(train_se_over_timestep)
+        # model.reset_states()
+        train_predictions = theta_model.predict(X_train)
+        for i in range(len(train_predictions)):
+            pred = decode_angles(train_predictions[i])
+            gnd_truth = decode_angles(theta_y_train[i])
+
+            diff = np.apply_along_axis(angle_dist, 1,
+                np.concatenate((pred, gnd_truth), axis=1))
+            train_se.append(diff**2)
+
+        train_rmse = np.sqrt(np.mean(np.array(train_se)))
         train_loss_history.append(train_rmse)
         
         test_se = []
-        for j in range(int(test_batch_len/time_step)-1):
-            time_seg = range((j*time_step), ((j+1)*time_step))
-            pred = model.predict(X_test[:, time_seg, :])
+        # for j in range(int(test_bl/time_step)-1):
+        #     time_seg = range((j*time_step), ((j+1)*time_step))
+        #     pred = model.predict(X_test[:, time_seg, :])
             
-            test_se_over_timestep = []
-            for k in range(batch_size):
-                _pred = decode_angles(pred[k])
-                _gnd_truth = decode_angles(y_test[k, time_seg, :])
-                diff = np.apply_along_axis(angle_dist, 1,
-                        np.concatenate((_pred, _gnd_truth),
-                            axis=1))
-                test_se_over_timestep.append(diff**2)
-            test_se.append(test_se_over_timestep)
-            # plt.plot(train_loss_history)
-            # plt.plot(test_loss_history)
-            # plt.xlabel('epoch')
-            # plt.ylabel('RMSE theta(rad)')
-            # plt.draw()
-            # plt.pause(0.0001)
-            # plt.clf()
-        model.reset_states()
+        #     test_se_over_timestep = []
+        #     for k in range(num_batches):
+        #         _pred = decode_angles(pred[k])
+        #         _gnd_truth = decode_angles(y_test[k, time_seg, :])
+        #         diff = np.apply_along_axis(angle_dist, 1,
+        #                 np.concatenate((_pred, _gnd_truth),
+        #                     axis=1))
+        #         test_se_over_timestep.append(diff**2)
+        #     test_se.append(test_se_over_timestep)
+        # model.reset_states()
+        test_predictions = theta_model.predict(X_test)
+        for i in range(len(X_test)):
+            pred = decode_angles(test_predictions[i])
+            gnd_truth = decode_angles(theta_y_test[i])
 
-        test_rmse = np.sqrt(np.mean(test_se))
+            diff = np.apply_along_axis(angle_dist, 1,
+                np.concatenate((pred, gnd_truth), axis=1))
+            test_se.append(diff**2)
+
+            plt.cla()
+            plt.plot(pred)
+            plt.plot(gnd_truth)
+            plt.legend(['pred', 'ground truth'])
+            plt.grid(True)
+            plt.pause(0.000001)
+
+        test_rmse = np.sqrt(np.mean(np.array(test_se)))
         test_loss_history.append(test_rmse)
 
+        print('train rmse on iteration %d: %f' % (it, train_rmse))
+        print('test rmse on iteration %d: %f' % (it, test_rmse))
+
+    model_fname = 'theta_model'
+    save_model(theta_model, dirpath, model_fname)
+
+    error_plot = plt.figure()
     ep_range = range(0, iterations)
     plt.plot(ep_range, train_loss_history)
     plt.plot(ep_range, test_loss_history)
     plt.title('theta miso prediction (RNN)')
     plt.xlabel('epoch')
     plt.ylabel('RMSE theta(rad)')
-    plt.show()
+    error_plot.show()
 
-    fname = 'theta_model'
-    model_json = model.to_json()
-    with open(fname+'.json', 'w') as json_file:
-        json_file.write(model_json)
-    model.save_weights(fname+'.h5')
-
+    
