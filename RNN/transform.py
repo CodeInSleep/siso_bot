@@ -26,6 +26,10 @@ def truncate(num, digits):
     stepper = pow(10.0, digits)
     return math.trunc(num*stepper)/stepper
 
+def scale(df, fields, factor):
+    df.loc[:, fields] = df.loc[:, fields]*factor
+    return df
+
 # create a differenced series
 def difference(dataset, interval=1):
     diff = list()
@@ -51,9 +55,6 @@ def remove_bias(df, fields, start_states):
     df.loc[:, fields] =  df.loc[:, fields] - start_states.loc[df.name, fields]
     return df
 
-def scale(df, fields, factor):
-    df.loc[:, fields] = df.loc[:, fields]*factor
-    return df
 # def remove_bias_in_batches(df, batch_size):
 #     # assign batch numbers to group by
 #     df.loc[:, 'batch_no'] = df.index//batch_size
@@ -128,7 +129,7 @@ def label_trials(df):
     df.loc[end:, 'input'] = current_trial_name + '_' + str(trial_idx)
     return df
 
-def extend_group(group_df, max_duration, extend_fields):
+def extend_group(group_df, max_duration):
     """
         extend each group so that each trial have length of max_duration
     """
@@ -139,7 +140,7 @@ def extend_group(group_df, max_duration, extend_fields):
         padding = pd.DataFrame(np.zeros((max_duration-group_df.shape[0], group_df.shape[1]), dtype=int))
         padding.columns = cols
         
-        padding.loc[:, extend_fields] = np.repeat(group_df.iloc[group_df.shape[0]-1].loc[extend_fields].values.reshape(-1, 1), len(padding), axis=1).T
+        # padding.loc[:, output_fields] = np.repeat(group_df.iloc[group_df.shape[0]-1].loc[output_fields].values.reshape(-1, 1), len(padding), axis=1).T
     
         # pad the time series with
         padded_group_df = pd.DataFrame(pd.np.row_stack([group_df, padding]))
@@ -182,7 +183,10 @@ def transform(df, layers_dims, dirpath, cached=False):
         df.loc[:, 'right_pwm'] = df.loc[:, 'right_pwm'].apply(truncate, args=(3,))
 
         # make xy in mm
-        df = scale(df, ['model_pos_x', 'model_pos_x'], 1000)
+        df.loc[:, 'model_pos_x'] = df.loc[:, 'model_pos_x']*1000
+        df.loc[:, 'model_pos_x'] = df.loc[:, 'model_pos_x'].apply(truncate, args=(3,))
+        df.loc[:, 'model_pos_y'] = df.loc[:, 'model_pos_y']*1000
+        df.loc[:, 'model_pos_y'] = df.loc[:, 'model_pos_y'].apply(truncate, args=(3,))
         df.loc[:, 'input'] = 'l_'+df.loc[:, 'left_pwm'].map(str)+'_r_'+df.loc[:, 'right_pwm'].map(str)
 
         print('Normalizing Inputs...')
@@ -217,16 +221,15 @@ def transform(df, layers_dims, dirpath, cached=False):
             diff(x, ['sim_time']))
         start_states = theta_data.groupby('input').first()
     
-        print('Removing Biases and Difference position...')
+        print('Removing Biases and Encoding Angles...')
         # remove bias the output_fields bias of each batch
         theta_data = theta_data.groupby('input').apply(lambda x: remove_bias(x, output_fields, start_states))
-        theta_data.loc[:, output_fields] = theta_data.groupby('input').apply(lambda x: x.loc[:, output_fields].diff().fillna(0))
-
-        print('Extending groups to max len and encoding angle...')
-        theta_data = theta_data.groupby(['input']).apply(lambda x: extend_group(x, max_duration,
-            ['theta(t-1)', 'theta']))
         encode_angle(theta_data, 'theta(t-1)')
         encode_angle(theta_data, 'theta')
+        theta_data.loc[:, output_fields] = theta_data.groupby('input').apply(lambda x: x.loc[:, output_fields].diff().fillna(0))
+
+        # print('Extending groups to max len...')
+        # theta_data = theta_data.groupby(['input']).apply(lambda x: extend_group(x, max_duration))
         
         n_train = int(num_trials*0.7)
         trial_names = start_of_batches.index.to_list()
@@ -248,10 +251,10 @@ def transform(df, layers_dims, dirpath, cached=False):
         p = layers_dims[0]
         J = layers_dims[-1]
 
-        X_train = trim_to_mult_of(X_train, max_duration)
-        X_test = trim_to_mult_of(X_test, max_duration)
-        y_train = trim_to_mult_of(y_train, max_duration)
-        y_test = trim_to_mult_of(y_test, max_duration)
+        # X_train = trim_to_mult_of(X_train, max_duration)
+        # X_test = trim_to_mult_of(X_test, max_duration)
+        # y_train = trim_to_mult_of(y_train, max_duration)
+        # y_test = trim_to_mult_of(y_test, max_duration)
 
         X_train.to_pickle(X_train_fname)
         X_test.to_pickle(X_test_fname)
@@ -259,14 +262,16 @@ def transform(df, layers_dims, dirpath, cached=False):
         y_test.to_pickle(y_test_fname)
         joblib.dump(input_scaler, os.path.join(dirpath, 'input_scaler.pkl'))
 
-        print('number of trials in train: %d' % (len(X_train)/max_duration))
-        print('number of trials in test: %d' % (len(X_test)/max_duration))
+        num_train_trials = len(X_train.groupby('input'))
+        num_test_trials = len(X_test.groupby('input'))
+        print('number of trials in train: %d' % num_train_trials)
+        print('number of trials in test: %d' % num_test_trials)
         print('max_duration: %d' % max_duration)
         data_info = {
             'timestep': max_duration,
             'num_trials': num_trials,
-            'num_train_trials': int(len(X_train)/max_duration),
-            'num_test_trials': int(len(X_test)/max_duration)
+            'num_train_trials': num_train_trials,
+            'num_test_trials': num_test_trials
         }
         save_obj(data_info, dirpath, 'data_info')
         save_obj(train_trial_names, dirpath, 'train_trial_names')
