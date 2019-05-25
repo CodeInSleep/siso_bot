@@ -63,7 +63,7 @@ if __name__ == '__main__':
     train_trial_names = load_obj(dirpath, 'train_trial_names')
     test_trial_names = load_obj(dirpath, 'test_trial_names')
    
-    iterations = 3
+    iterations = 10
     epochs = 30
     # learning curver
     train_loss_history = []

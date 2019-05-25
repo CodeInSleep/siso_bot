@@ -58,6 +58,7 @@ def predict_seq(model, X, initial_state, start, gnd_truth=None):
             trajectory.append(np.array([current_x, current_y, current_theta]))
 
     trajectory = np.array(trajectory)
+    print(trajectory)
     return trajectory
 
 def plot_example(gnd_truth, predictions, n):
@@ -158,23 +159,23 @@ if __name__ == '__main__':
         start = 300
         finish = 400
         _testrun = downsample(testrun, rate='0.2S')
-        testrun_X = _testrun.iloc[start: finish].loc[:, x_sel]
-        testrun_y = _testrun.iloc[start: finish].loc[:, y_sel]
+        X = _testrun.iloc[start: finish].loc[:, x_sel]
+        y = _testrun.iloc[start: finish].loc[:, y_sel]
 
         # X = X.loc[:, x_sel]
         # y = X.loc[:, y_sel]
         
-        testrun_X.loc[:, 'sim_time'] = X.loc[:, 'sim_time'].diff().fillna(0)
-        testrun_X.loc[:, ['left_pwm', 'right_pwm']] = input_scaler.transform(X.loc[:, ['left_pwm', 'right_pwm']])
-        testrun_y.loc[:, 'theta'] = y.loc[:, 'theta']*np.pi/180
-        testrun_X = testrun_X.values
-        testrun_y = testrun_y.values
+        X.loc[:, 'sim_time'] = X.loc[:, 'sim_time'].diff().fillna(0)
+        X.loc[:, ['left_pwm', 'right_pwm']] = input_scaler.transform(X.loc[:, ['left_pwm', 'right_pwm']])
+        y.loc[:, 'theta'] = y.loc[:, 'theta']*np.pi/180
+        X = X.values
+        y = y.values
 
         pdb.set_trace()
 
         start = 5
-        predictions = predict_seq(model, testrun_X, testrun_y[start], start)
-        plot_trajectories(predictions, testrun_y[start:])
+        predictions = predict_seq(model, X, y[start], start)
+        plot_trajectories(predictions, y[start:])
 
     for it in range(iterations):
         print("iteration %d" % it)
