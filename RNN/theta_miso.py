@@ -7,7 +7,6 @@ import pandas as pd
 import pdb
 from numpy import cos, sin, arctan2
 import matplotlib.pyplot as plt
-
 from transform import transform
 from visualize import visualize_3D
 from utils import decode_angles, plot_target_angles, save_obj, save_model, angle_dist, make_model, load_obj
@@ -63,7 +62,7 @@ if __name__ == '__main__':
     train_trial_names = load_obj(dirpath, 'train_trial_names')
     test_trial_names = load_obj(dirpath, 'test_trial_names')
    
-    iterations = 10
+    iterations = 3
     epochs = 30
     # learning curver
     train_loss_history = []
@@ -73,7 +72,7 @@ if __name__ == '__main__':
     # y_test = decode_angles(y_test)
     for it in range(iterations):
         print("iteration %d" % it)
-        theta_model.fit(X_train, theta_y_train, epochs=epochs, batch_size=num_batches, verbose=1, shuffle=False)
+        history = theta_model.fit(X_train, theta_y_train, epochs=epochs, batch_size=num_batches, verbose=1, shuffle=False)
 
         # calculate rmse for train data
         train_se = []
@@ -99,16 +98,16 @@ if __name__ == '__main__':
                 np.concatenate((pred, gnd_truth), axis=1))
             test_se.append(diff**2)
 
-            plt.cla()
-            plt.plot(pred)
-            plt.plot(gnd_truth)
-            plt.title('theta miso predictions (Iteration {})'.format(it+1))
-            plt.text(0.9, 0.9, test_trial_names[i])
-            plt.ylabel('radians')
-            plt.xlabel('timstep (1/0.2s)')
-            plt.legend(['pred', 'ground truth'])
-            plt.grid(True)
-            plt.pause(0.001)
+            # plt.cla()
+            # plt.plot(pred)
+            # plt.plot(gnd_truth)
+            # plt.title('theta miso predictions (Iteration {})'.format(it+1))
+            # plt.text(0.9, 0.9, test_trial_names[i])
+            # plt.ylabel('radians')
+            # plt.xlabel('timstep (1/0.2s)')
+            # plt.legend(['pred', 'ground truth'])
+            # plt.grid(True)
+            # plt.pause(0.001)
 
         test_rmse = np.sqrt(np.mean(np.array(test_se)))
         test_loss_history.append(test_rmse)
@@ -118,6 +117,9 @@ if __name__ == '__main__':
 
     model_fname = 'theta_model'
     save_model(theta_model, dirpath, model_fname)
+
+    # from keras.utils import plot_model
+    # plot_model(theta_model, to_file='theta_model.png')
 
     fig = plt.figure()
     ep_range = range(0, iterations)
