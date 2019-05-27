@@ -14,7 +14,7 @@ from utils import decode_angles, plot_target_angles, save_model, angle_dist, mak
 
 input_fields = ['left_pwm', 'right_pwm']
 
-layers_dims = [5, 10, 20, 4]
+layers_dims = [4, 10, 20, 3]
 
 fields = ['input', 'sim_time', 'left_pwm', 'right_pwm',
         'theta_cos', 'theta_sin']
@@ -22,11 +22,18 @@ fields = ['input', 'sim_time', 'left_pwm', 'right_pwm',
 data_cached = True
 model_cached = False
 fname = 'trial_1000_0_to_3.csv'
-model_fname = fname.split('.')[0]+'_model'
 
 def encode_angle(df, theta_field):
     df.loc[:, theta_field+'_cos'] = df.loc[:, theta_field].apply(lambda x: cos(x))
     df.loc[:, theta_field+'_sin'] = df.loc[:, theta_field].apply(lambda x: sin(x))
+
+def update_angle(old_angle, angle_diff):
+    new_angle = old_angle + angle_diff
+    if new_angle > 360:
+        return new_angle - 360
+    elif new_angle < 0:
+        return 360+new_angle
+    return new_angle
 
 def predict_seq(model, X, initial_state, start, gnd_truth=None):
     # X is a 2D sequence of input features
@@ -40,22 +47,25 @@ def predict_seq(model, X, initial_state, start, gnd_truth=None):
 
     for i in range(len(X)):
         if gnd_truth is None:
-            encoded_theta = np.array([np.cos(current_theta), np.sin(current_theta)])
-            _X = np.append(X[i], [encoded_theta[0], encoded_theta[1]]).reshape(1, -1)
+            # encoded_theta = np.array([np.cos(current_theta), np.sin(current_theta)])
+            # _X = np.append(X[i], [encoded_theta[0], encoded_theta[1]]).reshape(1, -1)
+            _X = np.append(X[i], current_theta)
         else:
             #parallels series
-            encoded_theta = np.array([np.cos(gnd_truth[i, 2]), np.sin(gnd_truth[i, 2])])
-            _X = np.append(X[i], encoded_theta).reshape(1, -1)
-
-        prediction = model.predict(np.expand_dims(_X, axis=0)).ravel()
+            # encoded_theta = np.array([np.cos(gnd_truth[i, 2]), np.sin(gnd_truth[i, 2])])
+            # _X = np.append(X[i], encoded_theta).reshape(1, -1)
+            _X = np.append(X[i], gnd_truth[i, 2])
+        
+        prediction = model.predict(_X.reshape(1, 1, -1)).ravel()
 
         if i >= start:
             current_x += prediction[0]
             current_y += prediction[1]
+            current_theta = update_angle(current_theta, prediction[2])
 
-            current_theta = decode_angles(prediction[2:].reshape(1, -1)).ravel()[0]
+            # current_theta = decode_angles(prediction[2:].reshape(1, -1)).ravel()[0]
 
-            trajectory.append(np.array([current_x, current_y, current_theta]))
+            trajectory.append(np.array([current_x, current_y, np.radians(current_theta)]))
 
     trajectory = np.array(trajectory)
     return trajectory
@@ -111,7 +121,7 @@ if __name__ == '__main__':
     J = layers_dims[-1]
     X_train, X_test, y_train, y_test, timestep = transform(df, layers_dims, dirpath, cached=data_cached)
     # X columns: ['sim_time', 'left_pwm', 'right_pwm', 'model_pos_x(t-1)', 'model_pos_y(t-1)', 'theta(t-1)_cos', 'theta(t-1)_sin']
-    # pdb.set_trace()
+    pdb.set_trace()
     # X_train = X_train.values.reshape(
     #     -1, timestep, p)
     # X_test = X_test.values.reshape(
@@ -121,9 +131,9 @@ if __name__ == '__main__':
     # y_test = y_test.values.reshape(
     #             -1, timestep, J)
 
-    model = make_model(None, layers_dims)
+    theta_model, xy_model = make_model(None, layers_dims, lr=1e-4)
    
-    iterations = 50
+    iterations = 10
     epochs = 1
     # learning curver
     train_loss_history = []
@@ -146,7 +156,7 @@ if __name__ == '__main__':
     x_sel = ['sim_time', 'left_pwm', 'right_pwm']
     y_sel = ['model_pos_x', 'model_pos_y', 'theta']
     start = 400
-    finish = 600
+    finish = 420
     _testrun = downsample(testrun, rate='0.2S')
     testrun_X = _testrun.iloc[start: finish].loc[:, x_sel]
     testrun_y = _testrun.iloc[start: finish].loc[:, y_sel]
@@ -164,43 +174,30 @@ if __name__ == '__main__':
     fig = plt.figure()
     ax1 = fig.add_subplot(121)
 
-    plot_debug = True
+    plot_debug = False
+    model_to_train = 'theta'
+    model = theta_model if model_to_train == 'theta' else xy_model
+    selector = range(2, 3) if model_to_train == 'theta' else range(0, 2)
+    model_fname = model_to_train+'_model'
 
     pdb.set_trace()
-
     for it in range(iterations):
         print("iteration %d" % it)
         if not model_cached:
             for i in range(len(X_train)):
-                X = X_train.iloc[i].values.reshape(1, 1, -1)
-                y = y_train.iloc[i].values.reshape(1, 1, -1)
-                model.fit(X, y, epochs=epochs, verbose=1, shuffle=False)
-            # for j in range(int(train_bl/time_step)-1):
-            #     time_seg = range((j*time_step), ((j+1)*time_step))
-            #     model.fit(X_train[:, time_seg, :], y_train[:, time_seg, :], 
-            #             batch_size=num_batches, verbose=1, shuffle=False)
-            # model.reset_states()
+                X = X_train.iloc[i].values.reshape(1, -1)
+                y = y_train.iloc[i].values.reshape(1, -1)[:, selector]
+                model.fit(X, y, epochs=epochs, shuffle=False)
 
             # calculate rmse for train data
             train_se = []
 
             train_diff = 0
             for i in range(len(X_train)):
-                X = X_train.iloc[i].values.reshape(1, 1, -1)
+                X = X_train.iloc[i].values.reshape(1, -1)
                 pred = model.predict(X).reshape(1, -1)
-                pred = np.concatenate((pred[:, :2], decode_angles(pred[:, 2:]).reshape(-1, 1)), axis=1)
-                # decoded_train_predictions.append(pred)
-                gnd_truth = y_train.iloc[i].values.reshape(1, -1)
-                gnd_truth = np.concatenate((gnd_truth[:, :2], decode_angles(gnd_truth[:, 2:]).reshape(-1, 1)), axis=1)
-                # decoded_train_gnd.append(gnd_truth)
-
-                # diff = np.sum(np.apply_along_axis(angle_dist, 1, \
-                #     np.concatenate((pred[:, 2].reshape(-1, 1), gnd_truth[:, 2].reshape(-1, 1)), axis=1))**2)
-                # print('Training errors:')
-                # print('angle diff: %f' % diff)
+                gnd_truth = y_train.iloc[i].values.reshape(1, -1)[:, selector]
                 train_diff += np.sum((pred - gnd_truth)**2)
-                # print('total diff: %f' % diff)
-                # train_se.append(diff)
 
             train_rmse = np.sqrt(train_diff/len(X_train))
             train_loss_history.append(train_rmse)
@@ -208,25 +205,11 @@ if __name__ == '__main__':
             test_se = []
 
             test_diff = 0
-            # decoded_test_predictions = []
-            # decoded_test_gnd = []
             for i in range(len(X_test)):
-                X = X_test.iloc[i].values.reshape(1, 1, -1)
+                X = X_test.iloc[i].values.reshape(1, -1)
                 pred = model.predict(X).reshape(1, -1)
-                pred = np.concatenate((pred[:, :2], decode_angles(pred[:, 2:]).reshape(-1, 1)), axis=1)
-                # decoded_test_predictions.append(pred)
-                gnd_truth = y_test.iloc[i].values.reshape(1, -1)
-                gnd_truth = np.concatenate((gnd_truth[:, :2], decode_angles(gnd_truth[:, 2:]).reshape(-1, 1)), axis=1)
-                # decoded_test_gnd.append(gnd_truth)
-
-                # print('Test errors:')
-                # print('angle diff: %f' % diff)
-                # diff = np.sum(np.apply_along_axis(angle_dist, 1, \
-                #     np.concatenate((pred[:, 2].reshape(-1, 1), gnd_truth[:, 2].reshape(-1, 1)), axis=1))**2)
-                # print('total diff: %f' % diff)
+                gnd_truth = y_test.iloc[i].values.reshape(1, -1)[:, selector]
                 test_diff += np.sum((pred - gnd_truth)**2)
-                # test_se.append(diff)
-
             test_rmse = np.sqrt(test_diff/len(X_test))
             test_loss_history.append(test_rmse)
 
@@ -243,7 +226,7 @@ if __name__ == '__main__':
         save_model(model, dirpath, model_fname)
 
         fig = plt.figure()
-        ep_range = range(0, iterations*epoch)
+        ep_range = range(0, iterations)
         plt.plot(ep_range, train_loss_history)
         plt.plot(ep_range, test_loss_history)
         plt.title('theta miso prediction (RNN)')

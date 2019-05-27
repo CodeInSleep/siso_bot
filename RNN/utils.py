@@ -5,9 +5,9 @@ import json
 import numpy as np
 from numpy import cos, sin, arctan2
 import pandas as pd
-from keras.models import Sequential, model_from_json
+from keras.models import Sequential, model_from_json, Model
 from keras.initializers import Identity, RandomNormal
-from keras.layers import Dense, Dropout, LSTM, SimpleRNN, Dropout, GRU, BatchNormalization, Activation
+from keras.layers import Input, Dense, Dropout, LSTM, SimpleRNN, Dropout, GRU, BatchNormalization, Activation
 from keras.optimizers import Adam
 from sklearn.externals import joblib
 
@@ -25,12 +25,9 @@ def trim_to_mult_of(df, size):
         return df
     return df.iloc[:-(len(df)%size), :]
 
-def angle_dist(angles):
-    ang1 = math.degrees(angles[0])
-    ang2 = math.degrees(angles[1])
-    
+def angle_dist(ang1, ang2):
     a = ang1 - ang2
-    return np.radians(np.abs((a+180)%360-180))**2
+    return (a+180)%360-180
 
 def plot_target_angles(arr, decode=False):
     # visualize theta (for debugging)
@@ -124,24 +121,44 @@ def save_model(model, dirpath, model_fname):
         json_file.write(model_json)
     model.save_weights(os.path.join(dirpath, model_fname+'.h5'))
 
-def make_model(num_batches, time_step, layers_dims, lr=1e-3):
-    model = Sequential()
+def make_model(time_step, layers_dims, lr=1e-3):
+    # model = Sequential()
 
-    model.add(Dense(layers_dims[1], input_shape=(time_step, layers_dims[0]),
-        kernel_initializer=RandomNormal(stddev=np.sqrt(2./layers_dims[0]))))
-    # model.add(BatchNormalization())
-    model.add(Activation('tanh'))
-    model.add(Dropout(0.3))
-    model.add(Dense(layers_dims[1], activation='tanh', 
-        kernel_initializer=RandomNormal(stddev=np.sqrt(2./layers_dims[1]))))
-    model.add(Dropout(0.3))
-    model.add(LSTM(layers_dims[2], activation='tanh', return_sequences=True))
-    model.add(Dense(layers_dims[3]))
+    # model.add(Dense(layers_dims[1], input_shape=(time_step, layers_dims[0]),
+    #     kernel_initializer=RandomNormal(stddev=np.sqrt(2./layers_dims[0]))))
+    # # model.add(BatchNormalization())
+    # model.add(Activation('tanh'))
+    # # model.add(Dropout(0.3))
+    # model.add(Dense(layers_dims[1], activation='tanh', 
+    #     kernel_initializer=RandomNormal(stddev=np.sqrt(2./layers_dims[1]))))
+    # # model.add(Dropout(0.3))
+    # model.add(LSTM(layers_dims[2], activation='tanh', return_sequences=True))
+    # model.add(Dense(layers_dims[3]))
+
+    # optimizer = Adam(lr=lr)
+    # model.compile(loss='mean_squared_error', optimizer=optimizer)
+
+    inputs = Input(shape=(layers_dims[0], ))
+
+    l1 = Dense(layers_dims[1], activation='tanh', kernel_initializer=RandomNormal(stddev=np.sqrt(2./layers_dims[1])))(inputs)
+    l2 = Dense(layers_dims[1], activation='tanh', kernel_initializer=RandomNormal(stddev=np.sqrt(2./layers_dims[1])))(l1)
+    # l2 = LSTM(layers_dims[2], activation='tanh', return_sequences=True)(l1)
+    
+    theta_diff_prediction = Dense(1)(l2)
+    dx_dy_prediction = Dense(2)(l2)
 
     optimizer = Adam(lr=lr)
-    model.compile(loss='mean_squared_error', optimizer=optimizer)
+    theta_model = Model(inputs=inputs, outputs=theta_diff_prediction)
+    theta_model.compile(optimizer=optimizer,
+              loss='mean_squared_error',
+              metrics=['mean_squared_error'])
+    xy_model = Model(inputs=inputs, outputs=dx_dy_prediction)
+    xy_model.compile(optimizer=optimizer,
+                  loss='mean_squared_error',
+                  metrics=['mean_squared_error'])
 
-    return model
+
+    return (theta_model, xy_model)
 
 def convert_to_inference_model(original_model):
     original_model_json = original_model.to_json()

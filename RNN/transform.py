@@ -9,7 +9,7 @@ from pandas import Series
 from sklearn.preprocessing import MinMaxScaler
 from visualize import visualize_3D
 from sklearn.externals import joblib 
-from utils import trim_to_mult_of, save_obj, load_obj
+from utils import trim_to_mult_of, save_obj, load_obj, angle_dist
 
 input_fields = ['left_pwm', 'right_pwm']
 output_fields = ['model_pos_x', 'model_pos_y']
@@ -177,7 +177,7 @@ def transform(df, layers_dims, dirpath, cached=False):
     y_test_fname = os.path.join(dirpath, 'y_test.pkl')
     
     if not cached:
-        df.loc[:, 'theta'] = df.loc[:, 'theta'].apply(lambda x: math.radians(x))
+        # df.loc[:, 'theta'] = df.loc[:, 'theta'].apply(lambda x: math.radians(x))
 
         df.loc[:, 'left_pwm'] = df.loc[:, 'left_pwm'].apply(truncate, args=(3,))
         df.loc[:, 'right_pwm'] = df.loc[:, 'right_pwm'].apply(truncate, args=(3,))
@@ -224,8 +224,13 @@ def transform(df, layers_dims, dirpath, cached=False):
         print('Removing Biases and Encoding Angles...')
         # remove bias the output_fields bias of each batch
         theta_data = theta_data.groupby('input').apply(lambda x: remove_bias(x, output_fields, start_states))
-        encode_angle(theta_data, 'theta(t-1)')
-        encode_angle(theta_data, 'theta')
+        
+        theta_data.loc[:, 'theta'] = angle_dist(theta_data.loc[:, 'theta'], theta_data.loc[:, 'theta(t-1)'])
+        theta_data = theta_data.rename(columns={'theta': 'theta_diff'})
+        theta_data.loc[:, 'theta(t-1)'] = theta_data.loc[:, 'theta(t-1)'].apply(lambda x: math.radians(x))
+        # theta_data = theta_data.drop('theta(t-1)', axis=1)
+        # encode_angle(theta_data, 'theta(t-1)')
+        # encode_angle(theta_data, 'theta')
         theta_data.loc[:, output_fields] = theta_data.groupby('input').apply(lambda x: x.loc[:, output_fields].diff().fillna(0))
 
         # print('Extending groups to max len...')
@@ -241,8 +246,8 @@ def transform(df, layers_dims, dirpath, cached=False):
         test_data = theta_data.loc[test_trial_names]
         # train_traj_data = traj_data.iloc[:n_train]
         # test_traj_data = traj_data.iloc[n_train:]
-        X_sel = ['sim_time', 'left_pwm', 'right_pwm', 'theta(t-1)_cos', 'theta(t-1)_sin']
-        y_sel = ['model_pos_x', 'model_pos_y', 'theta_cos', 'theta_sin']
+        X_sel = ['sim_time', 'left_pwm', 'right_pwm', 'theta(t-1)']
+        y_sel = ['model_pos_x', 'model_pos_y', 'theta_diff']
         X_train = train_data.loc[:, X_sel]
         y_train = train_data.loc[:, y_sel]
         X_test = test_data.loc[:, X_sel]
