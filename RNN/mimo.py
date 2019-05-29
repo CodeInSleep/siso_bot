@@ -29,7 +29,7 @@ def encode_angle(df, theta_field):
     df.loc[:, theta_field+'_cos'] = df.loc[:, theta_field].apply(lambda x: cos(x))
     df.loc[:, theta_field+'_sin'] = df.loc[:, theta_field].apply(lambda x: sin(x))
 
-def predict_seq(model, X, initial_state, start, gnd_truth=None):
+def predict_seq(model, X, initial_state, warmup, gnd_truth=None):
     # X is a 2D sequence of input features
     current_x = initial_state[0]
     current_y = initial_state[1]
@@ -39,6 +39,8 @@ def predict_seq(model, X, initial_state, start, gnd_truth=None):
     print('initial_state: ', initial_state)
 
     trajectory = []
+
+    interval = 10
 
     for i in range(len(X)):
         if gnd_truth is None or i % 10 != 0:
@@ -259,13 +261,13 @@ if __name__ == '__main__':
             print('test rmse: %f' % test_rmse)
 
             if plot_debug:
-                start = 10
+                warmup = 30
                 stateful_model = convert_to_inference_model(model)
 
-                predictions = predict_seq(stateful_model, testrun_X, testrun_y[start], start, gnd_truth=testrun_y)
+                predictions = predict_seq(stateful_model, testrun_X, testrun_y[warmup], warmup, gnd_truth=testrun_y)
                 
                 # plot_multiple_trajectories(stateful_model, testrun_X, testrun_y)
-                plot_trajectories(predictions[start:], testrun_y[start:], ax1)
+                plot_trajectories(predictions[warmup:], testrun_y[warmup:], ax1)
 
     if not model_cached:
         save_model(model, dirpath, model_fname)
