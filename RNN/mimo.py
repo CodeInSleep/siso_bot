@@ -29,7 +29,7 @@ def encode_angle(df, theta_field):
     df.loc[:, theta_field+'_cos'] = df.loc[:, theta_field].apply(lambda x: cos(x))
     df.loc[:, theta_field+'_sin'] = df.loc[:, theta_field].apply(lambda x: sin(x))
 
-def predict_seq(model, X, initial_state, gnd_truth=None):
+def predict_seq(model, X, initial_state, start, gnd_truth=None):
     # X is a 2D sequence of input features
     current_x = initial_state[0]
     current_y = initial_state[1]
@@ -51,12 +51,13 @@ def predict_seq(model, X, initial_state, gnd_truth=None):
 
         prediction = model.predict(np.expand_dims(_X, axis=0)).ravel()
 
-        current_x += prediction[0]
-        current_y += prediction[1]
+        if i > start:
+            current_x += prediction[0]
+            current_y += prediction[1]
 
-        current_theta = decode_angles(prediction[2:].reshape(1, -1)).ravel()[0]
+            current_theta = decode_angles(prediction[2:].reshape(1, -1)).ravel()[0]
 
-        trajectory.append(np.array([current_x, current_y, current_theta]))
+            trajectory.append(np.array([current_x, current_y, current_theta]))
 
     trajectory = np.array(trajectory)
     model.reset_states()
@@ -176,8 +177,8 @@ if __name__ == '__main__':
     y_sel = ['model_pos_x', 'model_pos_y', 'theta']
     _testrun = downsample(testrun, rate='0.5S')
 
-    start = 500
-    end = 600
+    start = 1000
+    end = 1300
     testrun_X = _testrun.iloc[start:end].loc[:, x_sel]
     testrun_y = _testrun.iloc[start:end].loc[:, y_sel]
         
@@ -258,9 +259,10 @@ if __name__ == '__main__':
             print('test rmse: %f' % test_rmse)
 
             if plot_debug:
+                start = 10
                 stateful_model = convert_to_inference_model(model)
 
-                predictions = predict_seq(stateful_model, testrun_X, testrun_y[0], gnd_truth=testrun_y)
+                predictions = predict_seq(stateful_model, testrun_X, testrun_y[start], start, gnd_truth=testrun_y)
                 
                 # plot_multiple_trajectories(stateful_model, testrun_X, testrun_y)
                 plot_trajectories(predictions, testrun_y, ax1)
