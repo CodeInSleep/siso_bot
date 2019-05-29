@@ -265,7 +265,7 @@ if __name__ == '__main__':
                 predictions = predict_seq(stateful_model, testrun_X, testrun_y[start], start, gnd_truth=testrun_y)
                 
                 # plot_multiple_trajectories(stateful_model, testrun_X, testrun_y)
-                plot_trajectories(predictions, testrun_y, ax1)
+                plot_trajectories(predictions[start:], testrun_y[start:], ax1)
 
     if not model_cached:
         save_model(model, dirpath, model_fname)
