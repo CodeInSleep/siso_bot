@@ -165,8 +165,8 @@ def downsample(df, rate='0.1S', start_of_batches=None):
     df.loc[:, 'sim_time_del'] = pd.to_timedelta(df.loc[:, 'sim_time'].values, unit='s')
     df = df.set_index('sim_time_del')
 
-    # df = df.resample(rate).mean().ffill()
-    df = df.resample(rate).mean().interpolate(method='linear')
+    df = df.resample(rate).mean().ffill()
+    # df = df.resample(rate).mean().interpolate(method='linear')
     df = df.reset_index()
 
     return df
@@ -208,11 +208,11 @@ def transform(df, layers_dims, dirpath, cached=False):
 
         print('Downsampling and diffing sim_time...')
         # downsample
-        theta_data = theta_data.groupby('input').apply(lambda x: downsample(x, rate='0.01S', start_of_batches=start_of_batches))
+        theta_data = theta_data.groupby('input').apply(lambda x: downsample(x, rate='0.5S', start_of_batches=start_of_batches))
         theta_data = theta_data.rename_axis(['input', 'timestep'])
+        # pdb.set_trace()
         theta_data = theta_data.drop('sim_time_del', axis=1)
         # drop the stationary trial
-        # theta_data = theta_data.drop('l_90.0_r_90.0_1', axis=0)
         # store max duration of a trial
         max_duration = max(theta_data.groupby(['input']).size())
         # take difference in time
@@ -229,7 +229,9 @@ def transform(df, layers_dims, dirpath, cached=False):
         theta_data = theta_data.dropna(axis=0)
         # print('Extending groups to max len...')
         # theta_data = theta_data.groupby(['input']).apply(lambda x: extend_group(x, max_duration))
-        
+
+        pdb.set_trace()
+
         n_train = int(num_trials*0.7)
         trial_names = start_of_batches.index.to_list()
         train_samples = np.random.choice(num_trials, n_train, replace=False)
@@ -255,6 +257,7 @@ def transform(df, layers_dims, dirpath, cached=False):
         # y_train = trim_to_mult_of(y_train, max_duration)
         # y_test = trim_to_mult_of(y_test, max_duration)
 
+        
         X_train.to_pickle(X_train_fname)
         X_test.to_pickle(X_test_fname)
         y_train.to_pickle(y_train_fname)

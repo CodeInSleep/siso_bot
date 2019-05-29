@@ -19,11 +19,11 @@ layers_dims = [5, 10, 20, 4]
 fields = ['input', 'sim_time', 'left_pwm', 'right_pwm',
         'theta_cos', 'theta_sin']
 
-data_cached = False
+data_cached = True
 model_cached = False
-fname = 'real_robot_data.csv'
+fname = 'trial_1000_0_to_3.csv'
 model_fname = fname.split('.')[0]+'_model'
-dirname = 'real_robot_data'
+dirname = 'trial_1000_0_to_3'
 
 def encode_angle(df, theta_field):
     df.loc[:, theta_field+'_cos'] = df.loc[:, theta_field].apply(lambda x: cos(x))
@@ -41,7 +41,7 @@ def predict_seq(model, X, initial_state, gnd_truth=None):
     trajectory = []
 
     for i in range(len(X)):
-        if gnd_truth is None:
+        if gnd_truth is None or i % 10 != 0:
             encoded_theta = np.array([np.cos(current_theta), np.sin(current_theta)])
             _X = np.append(X[i], encoded_theta).reshape(1, -1)
         else:
@@ -59,6 +59,7 @@ def predict_seq(model, X, initial_state, gnd_truth=None):
         trajectory.append(np.array([current_x, current_y, current_theta]))
 
     trajectory = np.array(trajectory)
+    model.reset_states()
     return trajectory
 
 def plot_example(gnd_truth, predictions, n):
@@ -162,7 +163,7 @@ if __name__ == '__main__':
     train_trial_names = load_obj(dirpath, 'train_trial_names')
     test_trial_names = load_obj(dirpath, 'test_trial_names')
 
-    test_fname = 'straight_1.csv' 
+    test_fname = 'trial_1000_0_to_3.csv' 
     testfile = os.path.join(dirpath, test_fname)
     testrun = pd.read_csv(testfile, engine='python')
     # testrun = scale(testrun, ['model_pos_x', 'model_pos_y'], 1000)
@@ -173,9 +174,12 @@ if __name__ == '__main__':
 
     x_sel = ['sim_time', 'left_pwm', 'right_pwm']
     y_sel = ['model_pos_x', 'model_pos_y', 'theta']
-    _testrun = downsample(testrun, rate='0.2S')
-    testrun_X = _testrun.loc[:, x_sel]
-    testrun_y = _testrun.loc[:, y_sel]
+    _testrun = downsample(testrun, rate='0.5S')
+
+    start = 500
+    end = 600
+    testrun_X = _testrun.iloc[start:end].loc[:, x_sel]
+    testrun_y = _testrun.iloc[start:end].loc[:, y_sel]
         
     testrun_X.loc[:, 'sim_time'] = testrun_X.loc[:, 'sim_time'].diff().fillna(0)
     testrun_X.loc[:, ['left_pwm', 'right_pwm']] = input_scaler.transform(testrun_X.loc[:, ['left_pwm', 'right_pwm']])
