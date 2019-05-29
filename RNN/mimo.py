@@ -24,6 +24,8 @@ model_cached = False
 fname = 'trial_1000_0_to_3.csv'
 model_fname = fname.split('.')[0]+'_model'
 dirname = 'trial_1000_0_to_3'
+np.random.seed(7)
+
 
 def encode_angle(df, theta_field):
     df.loc[:, theta_field+'_cos'] = df.loc[:, theta_field].apply(lambda x: cos(x))
@@ -38,12 +40,13 @@ def predict_seq(model, X, initial_state, warmup, gnd_truth=None):
     # pdb.set_trace()
     print('initial_state: ', initial_state)
 
+
     trajectory = []
 
     interval = 10
-
     for i in range(len(X)):
-        if gnd_truth is None or i % 10 != 0:
+        # if gnd_truth is None or i % interval != 0:
+        if gnd_truth is None:
             encoded_theta = np.array([np.cos(current_theta), np.sin(current_theta)])
             _X = np.append(X[i], encoded_theta).reshape(1, -1)
         else:
@@ -53,7 +56,7 @@ def predict_seq(model, X, initial_state, warmup, gnd_truth=None):
 
         prediction = model.predict(np.expand_dims(_X, axis=0)).ravel()
 
-        if i > start:
+        if i > warmup:
             current_x += prediction[0]
             current_y += prediction[1]
 
@@ -86,17 +89,17 @@ def plot_example(gnd_truth, predictions, n):
 
 def plot_trajectories(pred_traj, gnd_traj, ax):
     plt.cla()
-    ax1.set_title('trajectories')
+    ax1.set_title('Predicted vs. Ground Truth Trajectory')
     ax1.set_xlabel('x')
     ax1.set_ylabel('y')
-    visualize_3D(np.expand_dims(pred_traj, axis=0), ax, plt_arrow=True)
-    visualize_3D(np.expand_dims(gnd_traj, axis=0), ax, plt_arrow=True)
+    visualize_3D(np.expand_dims(pred_traj, axis=0), ax, plt_arrow=True, color='green')
+    visualize_3D(np.expand_dims(gnd_traj, axis=0), ax, plt_arrow=True, color='red')
     ax1.legend(['predicted', 'ground truth'])
     
     plt.draw()
     plt.pause(5)
 
-def plot_multiple_trajectories(model, X, y):
+def plot_multiple_trajectories(model, X, y, warmup=0):
     # pdb.set_trace()
     num_plots = 16
     
@@ -117,7 +120,7 @@ def plot_multiple_trajectories(model, X, y):
             _X = X[(i*l+j)*seq_len:(i*l+j+1)*seq_len]
             _y = y[(i*l+j)*seq_len:(i*l+j+1)*seq_len]
 
-            pred_traj = predict_seq(model, _X, _y[0])
+            pred_traj = predict_seq(model, _X, _y[0], warmup)
 
             plot_trajectories(pred_traj, _y, axes[i, j])
 
@@ -179,8 +182,8 @@ if __name__ == '__main__':
     y_sel = ['model_pos_x', 'model_pos_y', 'theta']
     _testrun = downsample(testrun, rate='0.5S')
 
-    start = 1000
-    end = 1300
+    start = 500
+    end = 600
     testrun_X = _testrun.iloc[start:end].loc[:, x_sel]
     testrun_y = _testrun.iloc[start:end].loc[:, y_sel]
         
@@ -261,11 +264,11 @@ if __name__ == '__main__':
             print('test rmse: %f' % test_rmse)
 
             if plot_debug:
-                warmup = 30
+                warmup = 0
                 stateful_model = convert_to_inference_model(model)
 
+                # pdb.set_trace()
                 predictions = predict_seq(stateful_model, testrun_X, testrun_y[warmup], warmup, gnd_truth=testrun_y)
-                
                 # plot_multiple_trajectories(stateful_model, testrun_X, testrun_y)
                 plot_trajectories(predictions[warmup:], testrun_y[warmup:], ax1)
 
