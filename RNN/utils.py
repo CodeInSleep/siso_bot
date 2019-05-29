@@ -94,11 +94,11 @@ def make_model(time_step, layers_dims, lr=1e-3):
         kernel_initializer=RandomNormal(stddev=np.sqrt(2./layers_dims[0]))))
     # model.add(BatchNormalization())
     model.add(Activation('tanh'))
-    model.add(Dropout(0.3))
+    # model.add(Dropout(0.3))
     model.add(Dense(layers_dims[1], activation='tanh', 
         kernel_initializer=RandomNormal(stddev=np.sqrt(2./layers_dims[1]))))
-    model.add(Dropout(0.3))
-    model.add(LSTM(layers_dims[2], activation='tanh', return_sequences=True))
+    # model.add(Dropout(0.3))
+    # model.add(LSTM(layers_dims[2], activation='tanh', return_sequences=True))
     model.add(Dense(layers_dims[3]))
 
     optimizer = Adam(lr=lr)

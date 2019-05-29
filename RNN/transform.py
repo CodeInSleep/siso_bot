@@ -165,7 +165,8 @@ def downsample(df, rate='0.1S', start_of_batches=None):
     df.loc[:, 'sim_time_del'] = pd.to_timedelta(df.loc[:, 'sim_time'].values, unit='s')
     df = df.set_index('sim_time_del')
 
-    df = df.resample(rate).mean().ffill()
+    # df = df.resample(rate).mean().ffill()
+    df = df.resample(rate).mean().interpolate(method='linear')
     df = df.reset_index()
 
     return df
@@ -207,7 +208,7 @@ def transform(df, layers_dims, dirpath, cached=False):
 
         print('Downsampling and diffing sim_time...')
         # downsample
-        theta_data = theta_data.groupby('input').apply(lambda x: downsample(x, rate='0.2S', start_of_batches=start_of_batches))
+        theta_data = theta_data.groupby('input').apply(lambda x: downsample(x, rate='0.01S', start_of_batches=start_of_batches))
         theta_data = theta_data.rename_axis(['input', 'timestep'])
         theta_data = theta_data.drop('sim_time_del', axis=1)
         # drop the stationary trial

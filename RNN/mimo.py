@@ -19,9 +19,9 @@ layers_dims = [5, 10, 20, 4]
 fields = ['input', 'sim_time', 'left_pwm', 'right_pwm',
         'theta_cos', 'theta_sin']
 
-data_cached = True
+data_cached = False
 model_cached = False
-fname = 'back_and_forth.csv'
+fname = 'real_robot_data.csv'
 model_fname = fname.split('.')[0]+'_model'
 dirname = 'real_robot_data'
 
