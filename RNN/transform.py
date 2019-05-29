@@ -183,10 +183,8 @@ def transform(df, layers_dims, dirpath, cached=False):
         df.loc[:, 'right_pwm'] = df.loc[:, 'right_pwm'].apply(truncate, args=(3,))
 
         # make xy in mm
-        df.loc[:, 'model_pos_x'] = df.loc[:, 'model_pos_x']*1000
-        df.loc[:, 'model_pos_x'] = df.loc[:, 'model_pos_x'].apply(truncate, args=(3,))
-        df.loc[:, 'model_pos_y'] = df.loc[:, 'model_pos_y']*1000
-        df.loc[:, 'model_pos_y'] = df.loc[:, 'model_pos_y'].apply(truncate, args=(3,))
+        # scale(df, ['model_pos_x', 'model_pos_y'], 1000)
+        
         df.loc[:, 'input'] = 'l_'+df.loc[:, 'left_pwm'].map(str)+'_r_'+df.loc[:, 'right_pwm'].map(str)
 
         print('Normalizing Inputs...')
@@ -227,7 +225,7 @@ def transform(df, layers_dims, dirpath, cached=False):
         encode_angle(theta_data, 'theta(t-1)')
         encode_angle(theta_data, 'theta')
         theta_data.loc[:, output_fields] = theta_data.groupby('input').apply(lambda x: x.loc[:, output_fields].diff().fillna(0))
-
+        theta_data = theta_data.dropna(axis=0)
         # print('Extending groups to max len...')
         # theta_data = theta_data.groupby(['input']).apply(lambda x: extend_group(x, max_duration))
         

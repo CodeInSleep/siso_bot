@@ -48,43 +48,6 @@ def plot_target_angles(arr, decode=False):
             plt.draw()
             plt.pause(1)
 
-def plot_multiple_trajectories():
-    '''
-    # for plotting multiple curves
-    _X_train = X_train[:4]
-    _y_train = y_train[:4]
-    _X_test = X_test[:4]
-    _y_test = y_test[:4]
-    plot_l = 2
-    plot_w = 2
-    # plot learning curve
-    train_fig, train_axes = plt.subplots(plot_l, plot_w)
-    test_fig, test_axes = plt.subplots(plot_l, plot_w)
-    
-    train_fig.title = 'train trials'
-    test_fig.title = 'test trials'
-    train_fig.show()
-    test_fig.show()
-    for it in range(iterations):
-        model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0, shuffle=False)
-
-        train_loss_history.append(calc_error(model, X_train, y_train, output_scaler))
-        test_loss_history.append(calc_error(model, X_test, y_test, output_scaler)) 
-
-        for idx, (x, y) in enumerate(product(range(plot_l), range(plot_w))):
-            train_axes[x, y].clear()
-            test_axes[x, y].clear()
-       
-        for idx, (x, y) in enumerate(product(range(plot_l), range(plot_w))):
-            train_predictions = model.predict(twoD2threeD(_X_train[plot_l*x+y])) 
-            test_predictions = model.predict(twoD2threeD(_X_test[plot_l*x+y]))
-            visualize_3D(twoD2threeD(_y_train[plot_l*x+y]), train_axes[x, y])
-            visualize_3D(train_predictions, train_axes[x, y])
-
-            visualize_3D(twoD2threeD(_y_test[plot_l*x+y]), test_axes[x, y])
-            visualize_3D(test_predictions, test_axes[x, y])
-    '''
-
 def save_obj(obj, dirpath, name):
     with open(os.path.join(dirpath, name + '.pkl'), 'wb') as f:
         pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
@@ -124,7 +87,7 @@ def save_model(model, dirpath, model_fname):
         json_file.write(model_json)
     model.save_weights(os.path.join(dirpath, model_fname+'.h5'))
 
-def make_model(num_batches, time_step, layers_dims, lr=1e-3):
+def make_model(time_step, layers_dims, lr=1e-3):
     model = Sequential()
 
     model.add(Dense(layers_dims[1], input_shape=(time_step, layers_dims[0]),
