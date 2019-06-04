@@ -221,11 +221,16 @@ def transform(df, dirpath, cached=False, split=False):
         # start_states = theta_data.groupby('input').first()
     
         print('Removing Biases and Encoding Angles...')
+        encode_angle(df, 'theta_start')
+        encode_angle(df, 'theta_final')
+
+        print('Normalizing Output Variables...')
+        output_scaler =  MinMaxScaler(feature_range=(0, 1))
+        df.loc[:, ['x_diff', 'y_diff']] = output_scaler.fit_transform(df.loc[:, ['x_diff', 'y_diff']])
         # pdb.set_trace()
         # remove bias the output_fields bias of each batch
         # theta_data = theta_data.groupby('input').apply(lambda x: remove_bias(x, output_fields, start_states))
-        encode_angle(df, 'theta_start')
-        encode_angle(df, 'theta_final')
+        
         # theta_data.loc[:, output_fields] = theta_data.groupby('input').apply(lambda x: x.loc[:, output_fields].diff().fillna(0))
         # theta_data = theta_data.loc[~((theta_data.loc[:, 'model_pos_x'] < 1e-5) | (theta_data.loc[:, 'model_pos_y'] < 1e-5))]
         # pdb.set_trace()
@@ -264,6 +269,7 @@ def transform(df, dirpath, cached=False, split=False):
             y_train.to_pickle(y_train_fname)
             y_test.to_pickle(y_test_fname)
             joblib.dump(input_scaler, os.path.join(dirpath, 'input_scaler.pkl'))
+            joblib.dump(output_scaler, os.path.join(dirpath, 'output_scaler.pkl'))
 
             print('number of trials in train: %d' % len(train_samples))
             print('number of trials in test: %d' % len(test_samples))

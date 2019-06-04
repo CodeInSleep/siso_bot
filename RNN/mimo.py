@@ -21,8 +21,8 @@ layers_dims = [5, 10, 20, 4]
 fields = ['input', 'sim_time', 'left_pwm', 'right_pwm',
         'theta_cos', 'theta_sin']
 
-data_cached = True
-model_cached = True
+data_cached = False
+model_cached = False
 fname = 'start_and_final_5.csv'
 model_fname = fname.split('.')[0]+'_FNN_model'
 dirname = 'real_robot_data'
@@ -39,7 +39,7 @@ def update_angle(old_angle, diff):
         new_angle = angle_diff(np.array([[new_angle, 0]])).ravel()[0]
     return new_angle
 
-def predict_seq(stateful_model, X, initial_state, gnd_truth=None):
+def predict_seq(stateful_model, X, initial_state, output_scaler=None, gnd_truth=None):
     # X is a 2D sequence of input features
     current_x = initial_state[0]
     current_y = initial_state[1]
@@ -64,8 +64,9 @@ def predict_seq(stateful_model, X, initial_state, gnd_truth=None):
         predictions = model.predict(_X).ravel()
         print('predictions: ', predictions)
 
-        current_x += predictions[0]
-        current_y += predictions[1]
+        unnorm_xy = output_scaler.inverse_transform(predictions[:2].reshape(1, -1)).ravel()
+        current_x += unnorm_xy[0]
+        current_y += unnorm_xy[1]
 
         current_theta = arctan2(predictions[3], predictions[2])
         # current_theta = update_angle(current_theta, predictions[2])
@@ -190,6 +191,7 @@ if __name__ == '__main__':
     # print('test_trial_names: ', [(idx, name) for idx, name in enumerate(test_trial_names)])
        
     input_scaler = joblib.load(os.path.join(dirpath, 'input_scaler.pkl'))
+    output_scaler = joblib.load(os.path.join(dirpath, 'output_scaler.pkl'))
     # theta_data = theta_data.groupby('input').apply(lambda x: upsample(x, rate='0.01S', start_of_batches=start_of_batches))
 
     # pdb.set_trace()
@@ -258,7 +260,7 @@ if __name__ == '__main__':
         if plot_debug:
             stateful_model = convert_to_inference_model(model)
             
-            predictions = predict_seq(stateful_model, testrun_X, initial_state)
+            predictions = predict_seq(stateful_model, testrun_X, initial_state, output_scaler=output_scaler)
             plot_trajectories(predictions, test_traj, ax1)
 
     print('Saving trained model...')
