@@ -10,6 +10,7 @@ from keras.initializers import Identity, RandomNormal
 from keras.layers import Dense, Dropout, LSTM, SimpleRNN, Dropout, GRU, BatchNormalization, Activation
 from keras.optimizers import Adam
 from sklearn.externals import joblib
+import pdb
 
 def convert_angles(df, angle_field):
     df.loc[:, angle_field] = decode_angles(df.loc[:, ['{}_cos'.format(angle_field), '{}_sin'.format(angle_field)]].values)
@@ -26,11 +27,18 @@ def trim_to_mult_of(df, size):
     return df.iloc[:-(len(df)%size), :]
 
 def angle_dist(angles):
-    ang1 = math.degrees(angles[0])
-    ang2 = math.degrees(angles[1])
+    ang1 = np.degrees(angles[0])
+    ang2 = np.degrees(angles[1])
     
     a = ang1 - ang2
     return np.radians(np.abs((a+180)%360-180))**2
+
+def angle_diff(angles):
+    ang1 = np.degrees(angles[:, 0])
+    ang2 = np.degrees(angles[:, 1])
+    
+    a = ang1 - ang2
+    return np.radians((a+180)%360-180)
 
 def plot_target_angles(arr, decode=False):
     # visualize theta (for debugging)
@@ -70,7 +78,7 @@ def load_dfs(dirpath):
 
     return (X_train, X_test, theta_y_train, pos_y_train, theta_y_test, pos_y_test, train_traj, test_traj, data_info)
 
-def load_model(dirpath, model_fname):
+def load_model(dirpath, model_fname, lr=1e-3):
     # load theta RNN model
     json_file = open(os.path.join(dirpath, '{}.json'.format(model_fname)), 'r')
     loaded_model_json = json_file.read()
@@ -78,6 +86,10 @@ def load_model(dirpath, model_fname):
     model = model_from_json(loaded_model_json)
     # load weights into new model
     model.load_weights(os.path.join(dirpath, "{}.h5".format(model_fname)))
+
+    optimizer = Adam(lr=lr)
+    model.compile(loss='mean_squared_error', optimizer=optimizer)
+
     print("Loaded {} from disk".format(model_fname))
     return model
 
@@ -90,7 +102,7 @@ def save_model(model, dirpath, model_fname):
 def make_model(time_step, layers_dims, lr=1e-3):
     model = Sequential()
 
-    model.add(Dense(layers_dims[1], input_shape=(time_step, layers_dims[0]),
+    model.add(Dense(layers_dims[1], input_shape=(1,layers_dims[0]),
         kernel_initializer=RandomNormal(stddev=np.sqrt(2./layers_dims[0]))))
     # model.add(BatchNormalization())
     model.add(Activation('tanh'))
@@ -98,7 +110,10 @@ def make_model(time_step, layers_dims, lr=1e-3):
     model.add(Dense(layers_dims[1], activation='tanh', 
         kernel_initializer=RandomNormal(stddev=np.sqrt(2./layers_dims[1]))))
     # model.add(Dropout(0.3))
+    # model.add(SimpleRNN(layers_dims[2], activation='tanh', return_sequences=True))
     # model.add(LSTM(layers_dims[2], activation='tanh', return_sequences=True))
+    model.add(Dense(layers_dims[2], activation='tanh',
+        kernel_initializer=RandomNormal(stddev=np.sqrt(2./layers_dims[1]))))
     model.add(Dense(layers_dims[3]))
 
     optimizer = Adam(lr=lr)
