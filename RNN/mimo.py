@@ -16,7 +16,7 @@ from utils import decode_angles, plot_target_angles, save_model, \
 
 input_fields = ['left_pwm', 'right_pwm']
 
-layers_dims = [5, 10, 20, 4]
+layers_dims = [5, 10, 20, 3]
 
 fields = ['input', 'sim_time', 'left_pwm', 'right_pwm',
         'theta_cos', 'theta_sin']
@@ -24,7 +24,7 @@ fields = ['input', 'sim_time', 'left_pwm', 'right_pwm',
 data_cached = False
 model_cached = False
 fname = 'start_and_final_5.csv'
-model_fname = fname.split('.')[0]+'_FNN_model'
+model_fname = fname.split('.')[0]+'_FNN_model_ad'
 dirname = 'real_robot_data'
 np.random.seed(6)
 
@@ -68,8 +68,8 @@ def predict_seq(stateful_model, X, initial_state, output_scaler=None, gnd_truth=
         current_x += unnorm_xy[0]
         current_y += unnorm_xy[1]
 
-        current_theta = arctan2(predictions[3], predictions[2])
-        # current_theta = update_angle(current_theta, predictions[2])
+        # current_theta = arctan2(predictions[3], predictions[2])
+        current_theta = update_angle(current_theta, predictions[2])
 
         #np.concatenate((pred[:, :2], decode_angles(pred[:, 2:]).reshape(-1, 1)), axis=1)
 
@@ -171,7 +171,7 @@ if __name__ == '__main__':
     else:
         model = make_model(None, layers_dims)
    
-    iterations = 100
+    iterations = 300
     epochs = 30
     # learning curver
     train_loss_history = []
@@ -200,7 +200,7 @@ if __name__ == '__main__':
     x_sel = ['time_duration', 'left_pwm', 'right_pwm', 'theta_start_cos', 'theta_start_sin']
     y_sel = ['model_pos_x_final', 'model_pos_y_final', 'theta_final']
 
-    start = 2
+    start = 5
 
     initial_state = testrun.iloc[0].loc[['model_pos_x_start', 'model_pos_y_start', 'theta_start']].values
 

@@ -178,7 +178,17 @@ def transform(df, dirpath, cached=False, split=False):
     y_train_fname = os.path.join(dirpath, 'y_train.pkl')
     y_test_fname = os.path.join(dirpath, 'y_test.pkl')
     
+    right_wheel_inputs = np.sort(df.loc[:, 'right_pwm'].unique())
+    right_wheel_mapping = {
+        rw_input: right_wheel_inputs[len(right_wheel_inputs)-idx-1] \
+            for idx, rw_input in enumerate(list(right_wheel_inputs))
+    }
+
     if not cached:
+        pdb.set_trace()
+
+        df.loc[:, 'right_pwm'] = df.loc[:, 'right_pwm'].replace(right_wheel_mapping)
+
         df.loc[:, ['theta_start', 'theta_final']] = df.loc[:, ['theta_start', 'theta_final']].apply(lambda x: np.radians(x))
         # df.loc[:, ['sim_time_start', 'sim_time_final']] = df.loc[:, ['sim_time_start', 'sim_time_final']]/1000
         df.loc[:, 'time_duration'] = df.loc[:, 'time_duration']/1000
@@ -192,9 +202,9 @@ def transform(df, dirpath, cached=False, split=False):
 
         print('Normalizing Inputs...')
         # normalize inputs
-        input_scaler = MinMaxScaler(feature_range=(0, 1))
+        input_scaler = MinMaxScaler(feature_range=(-1, 1))
         df.loc[:,input_fields] = input_scaler.fit_transform(df.loc[:,input_fields])
-        # df.loc[:, 'theta_diff'] = angle_diff(df.loc[:, ['theta_start', 'theta_final']].values)
+        df.loc[:, 'theta_diff'] = angle_diff(df.loc[:, ['theta_start', 'theta_final']].values)
         diff_columns = pd.DataFrame(0, index=np.arange(len(df)), columns=['sim_time_diff', 'x_diff', 'y_diff'])
         df = pd.concat((df, diff_columns), axis=1)
         df.loc[:, ['x_diff', 'y_diff']] = \
@@ -244,7 +254,6 @@ def transform(df, dirpath, cached=False, split=False):
         # theta_data = theta_data.rename_axis(['input', 'timestep'])
         # theta_data = theta_data.drop('input', axis=1)
         # theta_data = theta_data.dropna(axis=0)
-
         if split:
             num_trials = len(df)
             n_train = int(num_trials*0.7)
@@ -258,7 +267,7 @@ def transform(df, dirpath, cached=False, split=False):
             # train_traj_data = traj_data.iloc[:n_train]
             # test_traj_data = traj_data.iloc[n_train:]
             X_sel = ['time_duration', 'left_pwm', 'right_pwm', 'theta_start_cos', 'theta_start_sin']
-            y_sel = ['x_diff', 'y_diff', 'theta_final_cos', 'theta_final_sin']
+            y_sel = ['x_diff', 'y_diff', 'theta_diff']
             X_train = train_data.loc[:, X_sel]
             y_train = train_data.loc[:, y_sel]
             X_test = test_data.loc[:, X_sel]
