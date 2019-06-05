@@ -7,21 +7,24 @@ import pdb
 colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k', '#663333', '#FFA500', '#4B0082', '0.5']
 color_cycler = cycle(colors)
 
-def plot_arrows(trial, ax, tid, plt_arrow=False):
+def plot_arrows(trial, ax, tid, plt_arrow=False, color=None):
     #pdb.set_trace()
     r = 1
     trial_x = [x for x,y,theta in trial]
     trial_y = [y for x,y,theta in trial]
+
+    if color is None:
+        color = color=next(color_cycler)
     if plt_arrow:
         trial_u = [r * math.cos(theta) for x,y,theta in trial]
         trial_v = [r * math.sin(theta) for x,y,theta in trial]
-        ax.quiver(trial_x, trial_y, trial_u, trial_v, pivot='mid', color=next(color_cycler), gid=tid)
+        ax.quiver(trial_x, trial_y, trial_u, trial_v, pivot='mid', color=color, gid=tid)
     else:
-        ax.plot(trial_x, trial_y, color=next(color_cycler), gid=tid)
+        ax.plot(trial_x, trial_y, color=color, gid=tid)
 
-def visualize_3D(arr_3d, ax, plt_arrow=False):
+def visualize_3D(arr_3d, ax, plt_arrow=False, color=None):
     for tid, trial in enumerate(arr_3d):
-        plot_arrows(trial, ax, tid, plt_arrow=plt_arrow)
+        plot_arrows(trial, ax, tid, plt_arrow=plt_arrow, color=color)
 
 if __name__ == '__main__':
     test_pred = np.load('test_predictions.npy')
