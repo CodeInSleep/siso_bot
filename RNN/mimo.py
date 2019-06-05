@@ -21,9 +21,9 @@ fields = ['input', 'sim_time', 'left_pwm', 'right_pwm',
 
 data_cached = False
 model_cached = False
-fname = 'trial_1000_0_to_3.csv'
+fname = 'real_robot_data.csv'
 model_fname = fname.split('.')[0]+'_model'
-dirname = 'trial_1000_0_to_3'
+dirname = 'real_robot_data'
 
 def encode_angle(df, theta_field):
     df.loc[:, theta_field+'_cos'] = df.loc[:, theta_field].apply(lambda x: cos(x))
@@ -165,7 +165,7 @@ if __name__ == '__main__':
     train_trial_names = load_obj(dirpath, 'train_trial_names')
     test_trial_names = load_obj(dirpath, 'test_trial_names')
 
-    test_fname = 'trial_1000_0_to_3.csv' 
+    test_fname = 'straight_1.csv' 
     testfile = os.path.join(dirpath, test_fname)
     testrun = pd.read_csv(testfile, engine='python')
     # testrun = scale(testrun, ['model_pos_x', 'model_pos_y'], 1000)
@@ -178,10 +178,8 @@ if __name__ == '__main__':
     y_sel = ['model_pos_x', 'model_pos_y', 'theta']
     # _testrun = downsample(testrun, rate='0.5S')
 
-    start = 600
-    end = 650
-    testrun_X = testrun.iloc[start:end].loc[:, x_sel]
-    testrun_y = testrun.iloc[start:end].loc[:, y_sel]
+    testrun_X = testrun.loc[:, x_sel]
+    testrun_y = testrun.loc[:, y_sel]
         
     testrun_X.loc[:, 'sim_time'] = testrun_X.loc[:, 'sim_time'].diff().fillna(0)
     testrun_X.loc[:, ['left_pwm', 'right_pwm']] = input_scaler.transform(testrun_X.loc[:, ['left_pwm', 'right_pwm']])
@@ -276,7 +274,7 @@ if __name__ == '__main__':
     ep_range = range(0, iterations)
     plt.plot(ep_range, train_loss_history)
     plt.plot(ep_range, test_loss_history)
-    plt.title('theta miso prediction (RNN on real robot data)')
+    plt.title('Learning Curve on real robot data)')
     plt.xlabel('iteration (1 epochs/iteration)')
     plt.ylabel('RMSE')
     plt.show()
