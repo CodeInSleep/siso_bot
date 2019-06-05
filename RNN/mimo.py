@@ -16,7 +16,7 @@ from utils import decode_angles, plot_target_angles, save_model, \
 
 input_fields = ['left_pwm', 'right_pwm']
 
-layers_dims = [5, 10, 20, 3]
+layers_dims = [5, 10, 20, 4]
 
 fields = ['input', 'sim_time', 'left_pwm', 'right_pwm',
         'theta_cos', 'theta_sin']
@@ -24,7 +24,7 @@ fields = ['input', 'sim_time', 'left_pwm', 'right_pwm',
 data_cached = False
 model_cached = False
 fname = 'start_and_final_5.csv'
-model_fname = fname.split('.')[0]+'_FNN_model_ad'
+model_fname = fname.split('.')[0]+'_FNN_model'
 dirname = 'real_robot_data'
 np.random.seed(6)
 
@@ -52,13 +52,13 @@ def predict_seq(stateful_model, X, initial_state, output_scaler=None, gnd_truth=
     interval = 10
     for i in range(len(X)):
         # if gnd_truth is None or i % interval != 0:
-        # if gnd_truth is None:
-        encoded_theta = np.array([np.cos(current_theta), np.sin(current_theta)])
-        _X = np.append(X[i, :3], encoded_theta).reshape(1, 1, -1)
-        # else:
-        #     #parallels series
-        #     encoded_theta = np.array([np.cos(gnd_truth[i, 2]), np.sin(gnd_truth[i, 2])])
-        #     _X = np.append(X[i], encoded_theta).reshape(1, -1)
+        if gnd_truth is None or i == 0:
+            encoded_theta = np.array([np.cos(current_theta), np.sin(current_theta)])
+            _X = np.append(X[i, :3], encoded_theta).reshape(1, 1, -1)
+        else:
+            #parallels series
+            encoded_theta = np.array([np.cos(gnd_truth[i-1, 2]), np.sin(gnd_truth[i-1, 2])])
+            _X = np.append(X[i, :3], encoded_theta).reshape(1, 1, -1)
         # _X = np.append(X[i], current_theta).reshape(1, 1, -1)
 
         predictions = model.predict(_X).ravel()
@@ -68,8 +68,9 @@ def predict_seq(stateful_model, X, initial_state, output_scaler=None, gnd_truth=
         current_x += unnorm_xy[0]
         current_y += unnorm_xy[1]
 
+        current_theta = gnd_truth[i, 2]
         # current_theta = arctan2(predictions[3], predictions[2])
-        current_theta = update_angle(current_theta, predictions[2])
+        #current_theta = update_angle(current_theta, predictions[2])
 
         #np.concatenate((pred[:, :2], decode_angles(pred[:, 2:]).reshape(-1, 1)), axis=1)
 
@@ -136,6 +137,18 @@ def plot_multiple_trajectories(model, X, y, warmup=0):
 
             plot_trajectories(pred_traj, _y, axes[i, j])
 
+def reverse_map(df, field, mapping=None):
+    if mapping is not None:
+        right_wheel_inputs = np.sort(df.loc[:, field].unique())
+        reversed_right_wheel_inputs = np.flip(right_wheel_inputs)
+        mapping = {
+            rw_input: reversed_right_wheel_inputs[idx] \
+                for idx, rw_input in enumerate(list(right_wheel_inputs))
+        }
+
+    df.loc[:, field] = df.loc[:, field].replace(mapping)
+    return df
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Get path to data directory')
     parser.add_argument('--datadir', required=True)
@@ -154,6 +167,7 @@ if __name__ == '__main__':
 
     p = layers_dims[0]
     J = layers_dims[-1]
+    right_pwm_mapping = reverse_map(df, 'right_pwm')
     X_train, X_test, y_train, y_test = transform(df, dirpath, cached=data_cached, split=True)
     # X columns: ['sim_time', 'left_pwm', 'right_pwm', 'model_pos_x(t-1)', 'model_pos_y(t-1)', 'theta(t-1)_cos', 'theta(t-1)_sin']
     # pdb.set_trace()
@@ -180,8 +194,8 @@ if __name__ == '__main__':
     # decoded_y_train = decode_angles(y_train)
     # y_test = decode_angles(y_test)
     
-    train_trial_names = load_obj(dirpath, 'train_trial_names')
-    test_trial_names = load_obj(dirpath, 'test_trial_names')
+    # train_trial_names = load_obj(dirpath, 'train_trial_names')
+    # test_trial_names = load_obj(dirpath, 'test_trial_names')
 
     test_fname = 'v_shape_path_2.csv' 
     testfile = os.path.join(dirpath, test_fname)
@@ -195,16 +209,19 @@ if __name__ == '__main__':
     # theta_data = theta_data.groupby('input').apply(lambda x: upsample(x, rate='0.01S', start_of_batches=start_of_batches))
 
     # pdb.set_trace()
-    testrun = transform(testrun, dirpath, split=False)
+    reverse_map(testrun, 'right_pwm', mapping=right_pwm_mapping)
+    testrun = transform(testrun, dirpath, split=False, input_scaler=input_scaler, output_scaler=output_scaler)
 
     x_sel = ['time_duration', 'left_pwm', 'right_pwm', 'theta_start_cos', 'theta_start_sin']
     y_sel = ['model_pos_x_final', 'model_pos_y_final', 'theta_final']
 
-    start = 5
+    start = 2
 
-    initial_state = testrun.iloc[0].loc[['model_pos_x_start', 'model_pos_y_start', 'theta_start']].values
+    gnd_truth = testrun.iloc[:start].loc[:, ['model_pos_x_start', 'model_pos_y_start', 'theta_start']].values
+    initial_state = gnd_truth[0]
 
     testrun_X = testrun.iloc[:start].loc[:, x_sel].values
+
     testrun_y = testrun.iloc[:start].loc[:, y_sel].values
 
     test_traj = np.concatenate((initial_state.reshape(1, -1), testrun_y), axis=0)
@@ -223,7 +240,7 @@ if __name__ == '__main__':
 
     for it in range(iterations):
         print("iteration %d" % it)
-        model.fit(X_train.reshape(len(X_train), 1, -1), y_train.reshape(len(y_train), 1, -1), epochs=epochs, verbose=1, shuffle=False)
+        model.fit(X_train.reshape(len(X_train), 1, -1), y_train.reshape(len(y_train), 1, -1), epochs=epochs, verbose=1, shuffle=True)
         # calculate rmse for train data
         train_se = []
 
@@ -260,7 +277,7 @@ if __name__ == '__main__':
         if plot_debug:
             stateful_model = convert_to_inference_model(model)
             
-            predictions = predict_seq(stateful_model, testrun_X, initial_state, output_scaler=output_scaler)
+            predictions = predict_seq(stateful_model, testrun_X, initial_state, output_scaler=output_scaler, gnd_truth=testrun_y)
             plot_trajectories(predictions, test_traj, ax1)
 
     print('Saving trained model...')

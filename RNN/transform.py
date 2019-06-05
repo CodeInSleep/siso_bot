@@ -172,23 +172,13 @@ def upsample(df, rate='0.1S', start_of_batches=None):
 
     return df
 
-def transform(df, dirpath, cached=False, split=False):
+def transform(df, dirpath, cached=False, split=False, input_scaler=None, output_scaler=None):
     X_train_fname = os.path.join(dirpath, 'X_train.pkl')
     X_test_fname = os.path.join(dirpath, 'X_test.pkl')
     y_train_fname = os.path.join(dirpath, 'y_train.pkl')
     y_test_fname = os.path.join(dirpath, 'y_test.pkl')
-    
-    right_wheel_inputs = np.sort(df.loc[:, 'right_pwm'].unique())
-    right_wheel_mapping = {
-        rw_input: right_wheel_inputs[len(right_wheel_inputs)-idx-1] \
-            for idx, rw_input in enumerate(list(right_wheel_inputs))
-    }
 
     if not cached:
-        pdb.set_trace()
-
-        df.loc[:, 'right_pwm'] = df.loc[:, 'right_pwm'].replace(right_wheel_mapping)
-
         df.loc[:, ['theta_start', 'theta_final']] = df.loc[:, ['theta_start', 'theta_final']].apply(lambda x: np.radians(x))
         # df.loc[:, ['sim_time_start', 'sim_time_final']] = df.loc[:, ['sim_time_start', 'sim_time_final']]/1000
         df.loc[:, 'time_duration'] = df.loc[:, 'time_duration']/1000
@@ -202,8 +192,11 @@ def transform(df, dirpath, cached=False, split=False):
 
         print('Normalizing Inputs...')
         # normalize inputs
-        input_scaler = MinMaxScaler(feature_range=(-1, 1))
-        df.loc[:,input_fields] = input_scaler.fit_transform(df.loc[:,input_fields])
+        if not input_scaler:
+            input_scaler = MinMaxScaler(feature_range=(-1, 1))
+            df.loc[:,input_fields] = input_scaler.fit_transform(df.loc[:,input_fields])
+        else:
+            df.loc[:,input_fields] = input_scaler.transform(df.loc[:,input_fields])
         df.loc[:, 'theta_diff'] = angle_diff(df.loc[:, ['theta_start', 'theta_final']].values)
         diff_columns = pd.DataFrame(0, index=np.arange(len(df)), columns=['sim_time_diff', 'x_diff', 'y_diff'])
         df = pd.concat((df, diff_columns), axis=1)
@@ -235,8 +228,11 @@ def transform(df, dirpath, cached=False, split=False):
         encode_angle(df, 'theta_final')
 
         print('Normalizing Output Variables...')
-        output_scaler =  MinMaxScaler(feature_range=(0, 1))
-        df.loc[:, ['x_diff', 'y_diff']] = output_scaler.fit_transform(df.loc[:, ['x_diff', 'y_diff']])
+        if not output_scaler:
+            output_scaler =  MinMaxScaler(feature_range=(0, 1))
+            df.loc[:, ['x_diff', 'y_diff']] = output_scaler.fit_transform(df.loc[:, ['x_diff', 'y_diff']])
+        else:
+            df.loc[:, ['x_diff', 'y_diff']] = output_scaler.transform(df.loc[:, ['x_diff', 'y_diff']])
         # pdb.set_trace()
         # remove bias the output_fields bias of each batch
         # theta_data = theta_data.groupby('input').apply(lambda x: remove_bias(x, output_fields, start_states))
@@ -267,7 +263,7 @@ def transform(df, dirpath, cached=False, split=False):
             # train_traj_data = traj_data.iloc[:n_train]
             # test_traj_data = traj_data.iloc[n_train:]
             X_sel = ['time_duration', 'left_pwm', 'right_pwm', 'theta_start_cos', 'theta_start_sin']
-            y_sel = ['x_diff', 'y_diff', 'theta_diff']
+            y_sel = ['x_diff', 'y_diff', 'theta_final_cos', 'theta_final_sin']
             X_train = train_data.loc[:, X_sel]
             y_train = train_data.loc[:, y_sel]
             X_test = test_data.loc[:, X_sel]
