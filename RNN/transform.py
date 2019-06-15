@@ -203,14 +203,6 @@ def transform(df, layers_dims, dirpath, cached=False):
         start_of_batches = grouped.first()
         num_trials = len(grouped)
 
-<<<<<<< HEAD
-    pdb.set_trace()
-    X_train = train_data[input_fields].values.reshape(n_train, p, max_duration).transpose(2, 0, 1)
-    X_test = test_data[input_fields].values.reshape(num_trials-n_train, p, max_duration).transpose(2, 0, 1)
-    y_train = train_data[output_fields].values.reshape(n_train, J, max_duration).transpose(2, 0, 1)
-    y_test = test_data[output_fields].values.reshape(num_trials-n_train, J, max_duration).transpose(2, 0, 1)
-   
-=======
         print('Downsampling and diffing sim_time...')
         # downsample
         theta_data = theta_data.groupby('input').apply(lambda x: downsample(x, rate='0.2S', start_of_batches=start_of_batches))
@@ -224,8 +216,7 @@ def transform(df, layers_dims, dirpath, cached=False):
         theta_data = theta_data.groupby(['input']).apply(lambda x:
             diff(x, ['sim_time']))
         start_states = theta_data.groupby('input').first()
->>>>>>> DecisionTree
-    
+
         print('Removing Biases and Difference position...')
         # remove bias the output_fields bias of each batch
         theta_data = theta_data.groupby('input').apply(lambda x: remove_bias(x, output_fields, start_states))
