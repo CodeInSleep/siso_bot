@@ -9,7 +9,7 @@ from pandas import Series
 from sklearn.preprocessing import MinMaxScaler
 from visualize import visualize_3D
 from sklearn.externals import joblib 
-from utils import trim_to_mult_of, save_obj, load_obj
+from utils import trim_to_mult_of, save_obj, load_obj, angle_diff
 
 input_fields = ['left_pwm', 'right_pwm']
 output_fields = ['model_pos_x', 'model_pos_y']
@@ -25,6 +25,10 @@ np.random.seed(7)
 def truncate(num, digits):
     stepper = pow(10.0, digits)
     return math.trunc(num*stepper)/stepper
+
+def scale(df, fields, factor):
+    df.loc[:, fields] = df.loc[:, fields]*factor
+    return df
 
 # create a differenced series
 def difference(dataset, interval=1):
@@ -125,7 +129,7 @@ def label_trials(df):
     df.loc[end:, 'input'] = current_trial_name + '_' + str(trial_idx)
     return df
 
-def extend_group(group_df, max_duration, extend_fields):
+def extend_group(group_df, max_duration):
     """
         extend each group so that each trial have length of max_duration
     """
@@ -136,7 +140,7 @@ def extend_group(group_df, max_duration, extend_fields):
         padding = pd.DataFrame(np.zeros((max_duration-group_df.shape[0], group_df.shape[1]), dtype=int))
         padding.columns = cols
         
-        padding.loc[:, extend_fields] = np.repeat(group_df.iloc[group_df.shape[0]-1].loc[extend_fields].values.reshape(-1, 1), len(padding), axis=1).T
+        # padding.loc[:, output_fields] = np.repeat(group_df.iloc[group_df.shape[0]-1].loc[output_fields].values.reshape(-1, 1), len(padding), axis=1).T
     
         # pad the time series with
         padded_group_df = pd.DataFrame(pd.np.row_stack([group_df, padding]))
@@ -153,7 +157,7 @@ def diff(df, fields):
     df.loc[:, fields] = df.loc[:, fields].diff().fillna(0)
     return df
 
-def downsample(df, rate='0.1S', start_of_batches=None):
+def upsample(df, rate='0.1S', start_of_batches=None):
     # print(df.name)
     # if df.name == 'l_2.9_r_2.9_2':
     if start_of_batches is not None:
@@ -161,116 +165,125 @@ def downsample(df, rate='0.1S', start_of_batches=None):
     df.loc[:, 'sim_time_del'] = pd.to_timedelta(df.loc[:, 'sim_time'].values, unit='s')
     df = df.set_index('sim_time_del')
 
-    df = df.resample(rate).mean().ffill()
+    # df = df.resample(rate).mean().ffill()
+    df = df.resample(rate).mean().interpolate(method='linear').ffill()
+    # pdb.set_trace()
     df = df.reset_index()
 
     return df
 
-def transform(df, layers_dims, dirpath, cached=False):
+def transform(df, dirpath, cached=False, split=False, input_scaler=None, output_scaler=None):
     X_train_fname = os.path.join(dirpath, 'X_train.pkl')
     X_test_fname = os.path.join(dirpath, 'X_test.pkl')
     y_train_fname = os.path.join(dirpath, 'y_train.pkl')
     y_test_fname = os.path.join(dirpath, 'y_test.pkl')
 
     if not cached:
-        df.loc[:, 'theta'] = df.loc[:, 'theta'].apply(lambda x: math.radians(x))
-
+        df.loc[:, ['theta_start', 'theta_final']] = df.loc[:, ['theta_start', 'theta_final']].apply(lambda x: np.radians(x))
+        # df.loc[:, ['sim_time_start', 'sim_time_final']] = df.loc[:, ['sim_time_start', 'sim_time_final']]/1000
+        df.loc[:, 'time_duration'] = df.loc[:, 'time_duration']/1000
         df.loc[:, 'left_pwm'] = df.loc[:, 'left_pwm'].apply(truncate, args=(3,))
         df.loc[:, 'right_pwm'] = df.loc[:, 'right_pwm'].apply(truncate, args=(3,))
 
         # make xy in mm
-        df.loc[:, 'model_pos_x'] = df.loc[:, 'model_pos_x']*1000
-        df.loc[:, 'model_pos_x'] = df.loc[:, 'model_pos_x'].apply(truncate, args=(3,))
-        df.loc[:, 'model_pos_y'] = df.loc[:, 'model_pos_y']*1000
-        df.loc[:, 'model_pos_y'] = df.loc[:, 'model_pos_y'].apply(truncate, args=(3,))
+        # scale(df, ['model_pos_x', 'model_pos_y'], 1000)
+        
         df.loc[:, 'input'] = 'l_'+df.loc[:, 'left_pwm'].map(str)+'_r_'+df.loc[:, 'right_pwm'].map(str)
 
         print('Normalizing Inputs...')
         # normalize inputs
-        input_scaler = MinMaxScaler(feature_range=(0, 1))
-        df.loc[:,input_fields] = input_scaler.fit_transform(df.loc[:,input_fields])
-
-        theta_data = df.loc[:, ['input', 'sim_time']+input_fields+output_fields+['theta']]
-        theta_data.loc[:, 'theta(t-1)'] = theta_data.loc[:, 'theta'].shift(1)
+        if not input_scaler:
+            input_scaler = MinMaxScaler(feature_range=(-1, 1))
+            df.loc[:,input_fields] = input_scaler.fit_transform(df.loc[:,input_fields])
+        else:
+            df.loc[:,input_fields] = input_scaler.transform(df.loc[:,input_fields])
+        df.loc[:, 'theta_diff'] = angle_diff(df.loc[:, ['theta_start', 'theta_final']].values)
+        diff_columns = pd.DataFrame(0, index=np.arange(len(df)), columns=['sim_time_diff', 'x_diff', 'y_diff'])
+        df = pd.concat((df, diff_columns), axis=1)
+        df.loc[:, ['x_diff', 'y_diff']] = \
+            df.loc[:, ['model_pos_x_final', 'model_pos_y_final']].values - df.loc[:, ['model_pos_x_start', 'model_pos_y_start']].values
+        # df.loc[:, ['x_diff', 'y_diff']] = df.loc[:, ['x_diff', 'y_diff']]
+        # theta_data.loc[:, 'theta(t-1)'] = theta_data.loc[:, 'theta'].shift(1)
         # theta_data.loc[:, 'model_pos_x(t-1)'] = theta_data.loc[:, 'model_pos_x'].shift(1)
         # theta_data.loc[:, 'model_pos_y(t-1)'] = theta_data.loc[:, 'model_pos_y'].shift(1)
 
-        print('Labeling Trials...')
-        theta_data = label_trials(theta_data)
+        # print('Labeling Trials...')
+        # theta_data = label_trials(theta_data)
    
         # group by trial name, record first entry of every batch
-        grouped = theta_data.groupby('input')
-        start_of_batches = grouped.first()
-        num_trials = len(grouped)
+        # grouped = theta_data.groupby('input')
+        # start_of_batches = grouped.first()
+        # num_trials = len(grouped)
 
-        print('Downsampling and diffing sim_time...')
-        # downsample
-        theta_data = theta_data.groupby('input').apply(lambda x: downsample(x, rate='0.2S', start_of_batches=start_of_batches))
-        theta_data = theta_data.rename_axis(['input', 'timestep'])
-        theta_data = theta_data.drop('sim_time_del', axis=1)
         # drop the stationary trial
-        # theta_data = theta_data.drop('l_90.0_r_90.0_1', axis=0)
         # store max duration of a trial
-        max_duration = max(theta_data.groupby(['input']).size())
+        # max_duration = max(theta_data.groupby(['input']).size())
         # take difference in time
-        theta_data = theta_data.groupby(['input']).apply(lambda x:
-            diff(x, ['sim_time']))
-        start_states = theta_data.groupby('input').first()
 
-        print('Removing Biases and Difference position...')
+        print('Removing Biases and Encoding Angles...')
+        encode_angle(df, 'theta_start')
+        encode_angle(df, 'theta_final')
+
+        print('Normalizing Output Variables...')
+        if not output_scaler:
+            output_scaler =  MinMaxScaler(feature_range=(0, 1))
+            df.loc[:, ['x_diff', 'y_diff']] = output_scaler.fit_transform(df.loc[:, ['x_diff', 'y_diff']])
+        else:
+            df.loc[:, ['x_diff', 'y_diff']] = output_scaler.transform(df.loc[:, ['x_diff', 'y_diff']])
+        # pdb.set_trace()
         # remove bias the output_fields bias of each batch
-        theta_data = theta_data.groupby('input').apply(lambda x: remove_bias(x, output_fields, start_states))
-        theta_data.loc[:, output_fields] = theta_data.groupby('input').apply(lambda x: x.loc[:, output_fields].diff().fillna(0))
-
-        print('Extending groups to max len and encoding angle...')
-        theta_data = theta_data.groupby(['input']).apply(lambda x: extend_group(x, max_duration,
-            ['theta(t-1)', 'theta', 'model_pos_x', 'model_pos_y']))
-        encode_angle(theta_data, 'theta(t-1)')
-        encode_angle(theta_data, 'theta')
+        # theta_data = theta_data.groupby('input').apply(lambda x: remove_bias(x, output_fields, start_states))
         
-        n_train = int(num_trials*0.7)
-        trial_names = start_of_batches.index.to_list()
-        train_samples = np.random.choice(num_trials, n_train, replace=False)
-        train_trial_names = [trial_names[i] for i in train_samples]
-        test_samples = np.array([i for i in range(num_trials) if i not in train_samples])
-        test_trial_names = [trial_names[i] for i in test_samples]
-        train_data = theta_data.loc[train_trial_names]
-        test_data = theta_data.loc[test_trial_names]
-        # train_traj_data = traj_data.iloc[:n_train]
-        # test_traj_data = traj_data.iloc[n_train:]
-        X_sel = ['sim_time', 'left_pwm', 'right_pwm', 'theta(t-1)_cos', 'theta(t-1)_sin']
-        y_sel = ['model_pos_x', 'model_pos_y', 'theta_cos', 'theta_sin']
-        X_train = train_data.loc[:, X_sel]
-        y_train = train_data.loc[:, y_sel]
-        X_test = test_data.loc[:, X_sel]
-        y_test = test_data.loc[:, y_sel]
+        # theta_data.loc[:, output_fields] = theta_data.groupby('input').apply(lambda x: x.loc[:, output_fields].diff().fillna(0))
+        # theta_data = theta_data.loc[~((theta_data.loc[:, 'model_pos_x'] < 1e-5) | (theta_data.loc[:, 'model_pos_y'] < 1e-5))]
+        # pdb.set_trace()
+        # print('Extending groups to max len...')
+        # theta_data = theta_data.groupby(['input']).apply(lambda x: extend_group(x, max_duration))
+
+        # print('Upsampling and diffing sim_time...')
+        # downsample
+        # theta_data = theta_data.groupby('input').apply(lambda x: upsample(x, rate='0.01S', start_of_batches=start_of_batches))
+        # theta_data = theta_data.groupby('input').apply(lambda x: x.reset_index())
+        # theta_data = theta_data.rename_axis(['input', 'timestep'])
+        # theta_data = theta_data.drop('input', axis=1)
+        # theta_data = theta_data.dropna(axis=0)
+        if split:
+            num_trials = len(df)
+            n_train = int(num_trials*0.7)
+            # trial_names = start_of_batches.index.to_list()
+            train_samples = np.random.choice(num_trials, n_train, replace=False)
+            # train_trial_names = [trial_names[i] for i in train_samples]
+            test_samples = np.array([i for i in range(num_trials) if i not in train_samples])
+            # test_trial_names = [trial_names[i] for i in test_samples]
+            train_data = df.iloc[train_samples]
+            test_data = df.iloc[test_samples]
+            # train_traj_data = traj_data.iloc[:n_train]
+            # test_traj_data = traj_data.iloc[n_train:]
+            X_sel = ['time_duration', 'left_pwm', 'right_pwm', 'theta_start_cos', 'theta_start_sin']
+            y_sel = ['x_diff', 'y_diff', 'theta_final_cos', 'theta_final_sin']
+            X_train = train_data.loc[:, X_sel]
+            y_train = train_data.loc[:, y_sel]
+            X_test = test_data.loc[:, X_sel]
+            y_test = test_data.loc[:, y_sel]
         
-        p = layers_dims[0]
-        J = layers_dims[-1]
+            X_train.to_pickle(X_train_fname)
+            X_test.to_pickle(X_test_fname)
+            y_train.to_pickle(y_train_fname)
+            y_test.to_pickle(y_test_fname)
+            joblib.dump(input_scaler, os.path.join(dirpath, 'input_scaler.pkl'))
+            joblib.dump(output_scaler, os.path.join(dirpath, 'output_scaler.pkl'))
 
-        X_train = trim_to_mult_of(X_train, max_duration)
-        X_test = trim_to_mult_of(X_test, max_duration)
-        y_train = trim_to_mult_of(y_train, max_duration)
-        y_test = trim_to_mult_of(y_test, max_duration)
-
-        X_train.to_pickle(X_train_fname)
-        X_test.to_pickle(X_test_fname)
-        y_train.to_pickle(y_train_fname)
-        y_test.to_pickle(y_test_fname)
-        joblib.dump(input_scaler, os.path.join(dirpath, 'input_scaler.pkl'))
-
-        print('number of trials in train: %d' % (len(X_train)/max_duration))
-        print('number of trials in test: %d' % (len(X_test)/max_duration))
-        print('max_duration: %d' % max_duration)
-        data_info = {
-            'timestep': max_duration,
-            'num_trials': num_trials,
-            'num_train_trials': int(len(X_train)/max_duration),
-            'num_test_trials': int(len(X_test)/max_duration)
-        }
-        save_obj(data_info, dirpath, 'data_info')
-        save_obj(train_trial_names, dirpath, 'train_trial_names')
-        save_obj(test_trial_names, dirpath, 'test_trial_names')
+            print('number of trials in train: %d' % len(train_samples))
+            print('number of trials in test: %d' % len(test_samples))
+            data_info = {
+                'num_trials': num_trials,
+                'num_train_trials': train_samples,
+                'num_test_trials': test_samples
+            }
+            save_obj(data_info, dirpath, 'data_info')
+        else:
+            return df
+        
 
     else:
         X_train = pd.read_pickle(X_train_fname)
@@ -280,4 +293,4 @@ def transform(df, layers_dims, dirpath, cached=False):
 
         data_info = load_obj(dirpath, 'data_info')
     
-    return (X_train, X_test, y_train, y_test, data_info['timestep'])
+    return (X_train, X_test, y_train, y_test)
